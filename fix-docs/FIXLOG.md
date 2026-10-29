@@ -10,7 +10,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | --- | --- | --- | --- |
 | S1 | Login works without OTP | fixed | `fix(S1)` |
 | S2 | OTP/session issued to another merchant's user | fixed | `fix(S2)` |
-| S3 | Cancel another merchant's payment link (IDOR) | open | |
+| S3 | Cancel another merchant's payment link (IDOR) | fixed | `fix(S3)` |
 | S4 | Expired payment link still payable (FP-187) | open | |
 | S5 | Outbound webhook signature mismatch (FP-240) | open | |
 | S6 | Inbound acquirer signature check weak (FP-240) | open | |
@@ -110,6 +110,14 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: a user of two merchants signs in to one and lands in the other's account and money (reproduced on the running API: Beta login → Alpha data).
 - Fix: use the verified `user` as the OTP recipient; delete the unused `auth/users.ts`.
 - Test: `routes/auth.fix.test.ts` (session went to merchant A's user before, merchant B's now) · ADR: none
+
+### S3 Cancel another merchant's payment link
+- Clue: "I cancelled merchant B's payment link from merchant A's dashboard"
+- What's wrong: any merchant can cancel any other merchant's payment link by its id.
+- Why: the route only checks the merchant in the URL is the caller; `cancelPaymentLink` updates by link id alone.
+- What it breaks: a competitor or a leaked key can kill another shop's live links, so its customers can't pay.
+- Fix: `cancelPaymentLink` takes the merchant id and both its queries add `AND merchant_id = $2`; another merchant's link answers 404.
+- Test: `routes/paymentLinks.fix.test.ts` (cross-merchant cancel gave 204 before, 404 now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
