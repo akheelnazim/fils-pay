@@ -73,10 +73,11 @@ Corrections:
   credit `card_scheme_clearing` / debit residue → **X5** (merchants were charged the residue).
 - ADR-0003 (calendar-month scripts use the UTC month): the March script's UTC month is **correct**.
   X2 fix = idempotency guard + dry run only; don't change the window.
-- ADR-0004 (console button rebuilds from settled data, not the ledger): the audit's M9 fix
-  contradicts it. **Needs your decision**: keep the ADR, or write a superseding ADR, then fix.
+- ADR-0004 (console button rebuilds from settled data, not the ledger): the audit's M9 swap to
+  the ledger is **rejected** (code follows the ADR). Fix the settled-data path instead.
 - ADR-0005 (migrations 0054–0056 reserved for settlement v2, never reuse): 0054, 0055, 0056 in
-  this repo break it. D1/D2 fix = remove/renumber them; 0056 (`revoke_after`) needs a new number.
+  this repo break it. Move them to 0073+: keep `merchant_payable_position` (M9 reads it) and
+  `v_active_api_keys`, drop `v_unbatched_capture_events`, fix or drop 0055, keep `revoke_after`.
 - ADR-0006 (Adjust balance is cache-only; rebuild resets it): by design, not a bug. Code matches
   (cache + audit row; journaled variant exists, not exposed).
 - New migrations (R2, R3, M5, M6) start at 0073, which ADR-0005 allows.
