@@ -8,7 +8,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 
 | ID | Bug | Status | Commit |
 | --- | --- | --- | --- |
-| S1 | Login works without OTP | open | |
+| S1 | Login works without OTP | fixed | `fix(S1)` |
 | S2 | OTP/session issued to another merchant's user | open | |
 | S3 | Cancel another merchant's payment link (IDOR) | open | |
 | S4 | Expired payment link still payable (FP-187) | open | |
@@ -94,6 +94,14 @@ Keep each entry short. One per bug, under its ID:
 - Fix: <change> · Proper fix (if different): <one line>
 - Test: <file> · ADR: <number, if any> · Commit: <sha>
 ```
+
+### S1 Login works without OTP
+- Clue: "Login works without entering the OTP code?"
+- What's wrong: the cookie issued after the password step (before the OTP) works on every merchant route.
+- Why: `lookupSession` reads the `live_sessions` view, which drops revoked/expired sessions but not unverified ones.
+- What it breaks: anyone with a merchant user's password reads and acts on that merchant's money (reproduced on the running API).
+- Fix: `AND s.authenticated = true` in `lookupSession` (`auth/sessions.ts`).
+- Test: `auth/sessions.fix.test.ts` (pending session returned a row before, null now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
