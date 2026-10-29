@@ -88,6 +88,7 @@ Keep each entry short. One per bug, under its ID:
 
 ```markdown
 ### <ID> <title>
+- Clue: <matching symptom from the evidence transcript; omit if none>
 - What's wrong: <one line>
 - Why: <root cause, one line>
 - What it breaks: <who loses what, fils example>

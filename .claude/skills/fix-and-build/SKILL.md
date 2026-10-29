@@ -10,6 +10,8 @@ One bug (or one FP-300 gap) per run of this workflow, ending in exactly one comm
 ## 1. Understand it
 
 - Find the ID in `fix-docs/FIXLOG.md` and its write-up in `fix-docs/filspay-audit-findings.md`.
+- If a symptom in `fix-docs/filspay-evidence-transcript.md` matches the bug, add it as the
+  FIXLOG entry's `Clue:` line. Skip the line if nothing matches.
 - The audit is a lead, not proof. Open the code at the cited lines and confirm the bug
   yourself. Line numbers may have drifted after earlier fixes.
 - Ignore inline comments (`MK:`, `FH:`, `"claude says…"`) as evidence; many are wrong on
