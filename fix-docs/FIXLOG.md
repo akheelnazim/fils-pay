@@ -45,7 +45,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M4 | Net payout computed in float32 | fixed | `fix(M4)` |
 | M5 | Lifetime payout estimate drifts (REAL) | open | |
 | M6 | Platform volume counter overflows int32 | open | |
-| M7 | Dashboard fee 245 vs charged 225 bps | open | |
+| M7 | Dashboard fee 245 vs charged 225 bps | fixed | `fix(M7)` |
 | M8 | MDR recalculation rewrites paid batches | open | |
 | M9 | Recalculate balances button 135K → 7K (FP-203) | open | |
 | M10 | Settlement summary double-counts multi-capture | open | |
@@ -280,6 +280,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: merchants are paid a few fils off on bigger batches (20,000.123 BD gross − 500.003 BD fee paid 1 fil short), growing with size (22,739 fils off on a 9-billion-fil batch). Breaks ADR-0001.
 - Fix: `return grossFils - feeFils`.
 - Test: `settlement/payable_fix_test.go` (empty, ordinary, 123,456.789 BD, odd fils, very large; three were wrong before) · ADR: 0001
+
+#### M7 Fee shown 245 bps, charged 225 bps
+- Clue: "It shows 245bps, but payments go through at 225bps. The two fee tables have different dates, and one was a backfill fix."
+- What's wrong: the staff console's merchant page showed the most recently *typed-in* fee schedule, not the one in force.
+- Why: `getCurrentFeeScheduleForDisplay` ordered by `created_at`; billing (`feeSchedule.ts`) uses `effective_from <= now()` ordered by `effective_from DESC, created_at DESC`. The Go twin `LoadFeeSchedules` had no tie-break on same-day rates.
+- What it breaks: staff quote merchants the wrong rate (a March correction keyed in August showed 245 while 225 is charged); future-dated rates showed early; on a same-day tie settlement could pick the older entry.
+- Fix: display uses billing's rule; Go orders `effective_from ASC, created_at ASC` so its "last applicable" matches billing. Updated the test that asserted the backfilled row wins.
+- Test: `fees/currentFeeScheduleDisplay.fix.test.ts` (backdated, future-dated, same-day tie, only-future → none; display = billing) and `settlement/fee_schedule_fix_test.go` (tie) · ADR: none
 
 ### Settlement timing and test merchants (T)
 
