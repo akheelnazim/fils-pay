@@ -19,6 +19,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S9 | Weak, brute-forceable OTP | fixed | `fix(S9)` |
 | S10 | Credit self-approval compares display name | fixed | `fix(S10)` |
 | S11 | Secret committed in `ops/.env.docker` | open | |
+| S12 | Any admin (incl. support) can issue merchant credits; no role check on create | open | |
 | R1 | Payment link charged twice (2026-05-14) | open | |
 | R2 | Duplicate acquirer callback notes (FP-201) | open | |
 | R3 | Duplicate payout notifications (2026-08-21) | open | |
