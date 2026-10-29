@@ -81,11 +81,11 @@ export type ImpersonationMerchantRole = "owner" | "finance" | "support";
 /** `admin_users.role` (migration 0031). */
 type AdminUserRole = "support" | "finance" | "super_admin";
 
-/** Maps the admin's role to the merchant-plane role used during impersonation. */
+/** Every admin role impersonates as the read-only `support` role (S8). */
 const MERCHANT_ROLE_FOR_ADMIN_ROLE: Record<AdminUserRole, ImpersonationMerchantRole> = {
   support: "support",
-  finance: "finance",
-  super_admin: "owner",
+  finance: "support",
+  super_admin: "support",
 };
 
 /** @property merchantRole Always "support" (ARCH §8): a grant is view-only. */

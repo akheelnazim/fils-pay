@@ -79,13 +79,17 @@ export const requireMerchantAuth: preHandlerHookHandler = async (request: Fastif
   // its own cookie (never fp_admin_sid — this function does not know that
   // cookie's name and never looks at it). The grant resolves to the operator's
   // standing expressed in the merchant plane's own role vocabulary
-  // (see admin/impersonation.ts), so the existing requireMerchantRole gates
-  // apply to it exactly as they do to a real merchant session — one authority
-  // model, no second "what may impersonation do" allowlist to drift from it.
+  // (always "support", see admin/impersonation.ts), and every write method is
+  // refused below, because some write routes carry no role check (S8).
   const impersonationToken = request.cookies[request.server.config.impersonationCookieName];
   if (impersonationToken) {
     const grant = await lookupImpersonationGrant(request.server.db, impersonationToken);
     if (grant) {
+      // "View as merchant" is read-only: some write routes (capture, void,
+      // saved filters) have no role check, so block every write here (S8).
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        throw new ForbiddenError("forbidden");
+      }
       request.merchantAuth = {
         merchantId: grant.merchantId,
         actorType: "admin_impersonation",

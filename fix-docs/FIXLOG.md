@@ -15,7 +15,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S5 | Outbound webhook signature mismatch (FP-240) | fixed | `fix(S5)` |
 | S6 | Inbound acquirer signature check weak (FP-240) | fixed | `fix(S6)` |
 | S7 | Rotated API key keeps working | fixed | `fix(S7)` |
-| S8 | Impersonation gets write access | open | |
+| S8 | Impersonation gets write access | fixed | `fix(S8)` |
 | S9 | Weak, brute-forceable OTP | open | |
 | S10 | Credit self-approval compares display name | open | |
 | S11 | Secret committed in `ops/.env.docker` | open | |
@@ -150,6 +150,14 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: rotating a leaked key does nothing; whoever holds it keeps full API access.
 - Fix: revoke the old key (`revoked_at = now()`, `revoked_reason = 'rotated'`) in the same transaction. Updated `routes/admin.test.ts`, which asserted the old key stayed active. Alternative (not done): a short grace period via `revoke_after` + a sweep job; needs new code and the 0056 column (number reserved by ADR-0005).
 - Test: `admin/apiKeys.fix.test.ts` (old key still verified after rotation before, null now) · ADR: none
+
+### S8 Impersonation gets write access
+- Clue: "some admin actions don't seem to have the right role checks"
+- What's wrong: "view as merchant" lets staff change the merchant's data; a super_admin acts as the merchant's owner.
+- Why: impersonation maps super_admin → owner and finance → finance; and capture, void and saved-filter routes have no role check at all, so even "support" could write.
+- What it breaks: staff can create/cancel links, change webhooks, capture or void payments as the merchant, and those writes are recorded as the merchant's own session.
+- Fix: every admin role maps to `support`, and `requireMerchantAuth` refuses any non-GET/HEAD request made under impersonation (403 `forbidden`). The audit's role-mapping alone would not have closed the role-free write routes. Proper fix: record impersonated writes as `admin_impersonation` in the writer-actor columns (needs a schema change), and add role checks to capture/void.
+- Test: `admin/impersonation.fix.test.ts` (owner role, link creation and saved-filter write all succeeded before, refused now; reads still work) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
