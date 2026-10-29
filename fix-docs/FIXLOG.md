@@ -12,7 +12,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S2 | OTP/session issued to another merchant's user | fixed | `fix(S2)` |
 | S3 | Cancel another merchant's payment link (IDOR) | fixed | `fix(S3)` |
 | S4 | Expired payment link still payable (FP-187) | fixed | `fix(S4)` |
-| S5 | Outbound webhook signature mismatch (FP-240) | open | |
+| S5 | Outbound webhook signature mismatch (FP-240) | fixed | `fix(S5)` |
 | S6 | Inbound acquirer signature check weak (FP-240) | open | |
 | S7 | Rotated API key keeps working | open | |
 | S8 | Impersonation gets write access | open | |
@@ -126,6 +126,14 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: shoppers pay stale links (old prices, cancelled orders); anyone can revive any expired link.
 - Fix: expiry uses the server clock (`new Date()`) in `pay.ts`; `submittedAt` is ignored. Proper fix: also drop `submittedAt` from the API body and checkout page and delete `expiryReferenceTime` + its unit tests in `pay.test.ts` (which assert the client time is honoured); not done here because it changes the public request shape and an existing test file.
 - Test: `paymentLinks/pay.fix.test.ts` (expired link with old `submittedAt` paid 200 before, 410 now) · ADR: none
+
+### S5 Outbound webhook signature mismatch (FP-240)
+- Clue: "The part that signs the message and the part that sends it don't agree on what it looks like."
+- What's wrong: merchants can't verify our webhook signatures against the bytes they receive.
+- Why: `signPayload` signs sorted-key JSON (`canonicalJson`); the dispatcher and "send test event" sent `JSON.stringify` (original key order), so the signed and sent bytes differ.
+- What it breaks: merchants following standard HMAC verification reject every webhook (payment and payout notices), or turn verification off.
+- Fix: dispatcher and test-send now send `canonicalJson(payload)`, the exact string that was signed. Proper fix: serialise once and sign that string (signer takes raw bytes), so the two can never drift.
+- Test: `webhooks/sign.fix.test.ts` (raw-bytes HMAC failed before for both senders, passes now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
