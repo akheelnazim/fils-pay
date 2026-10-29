@@ -192,10 +192,16 @@ test("failing endpoint: backoff/exhaustion sequence across repeated runDispatchP
   assert.equal(delivery.status, "pending");
   assert.equal(delivery.attempt_count, 1);
   assert.equal(delivery.response_status_code, 500);
-  const expectedDelay1 = backoffDelayMs(1, config);
+  // Q1: the stored delay carries random ±10% jitter; compare against the
+  // un-jittered midpoint (jitter = 0.5) and let the tolerance absorb it.
+  const expectedDelay1 = backoffDelayMs(1, config, () => 0.5);
   assert.equal(expectedDelay1, 1000);
   const actualDelay1 = delivery.next_attempt_at.getTime() - Date.now();
-  assert.ok(Math.abs(actualDelay1 - expectedDelay1) < 3000, `expected ~${expectedDelay1}ms, got ${actualDelay1}ms`);
+  // Within the ±10% jitter band, with 500 ms allowance for time spent in the test itself.
+  assert.ok(
+    actualDelay1 >= expectedDelay1 * 0.9 - 500 && actualDelay1 <= expectedDelay1 * 1.1 + 100,
+    `expected ${expectedDelay1}ms ±10%, got ${actualDelay1}ms`,
+  );
 
   // Pass 2: not due yet (next_attempt_at is in the future) — no new attempt
   // against THIS delivery specifically (runDispatchPass's own return value
@@ -212,10 +218,13 @@ test("failing endpoint: backoff/exhaustion sequence across repeated runDispatchP
   delivery = await getDelivery(String(outboxEvent.id), endpoint.id);
   assert.equal(delivery.status, "pending");
   assert.equal(delivery.attempt_count, 2);
-  const expectedDelay2 = backoffDelayMs(2, config);
+  const expectedDelay2 = backoffDelayMs(2, config, () => 0.5);
   assert.equal(expectedDelay2, 2000);
   const actualDelay2 = delivery.next_attempt_at.getTime() - Date.now();
-  assert.ok(Math.abs(actualDelay2 - expectedDelay2) < 3000, `expected ~${expectedDelay2}ms, got ${actualDelay2}ms`);
+  assert.ok(
+    actualDelay2 >= expectedDelay2 * 0.9 - 500 && actualDelay2 <= expectedDelay2 * 1.1 + 100,
+    `expected ${expectedDelay2}ms ±10%, got ${actualDelay2}ms`,
+  );
 
   // Force due, pass again: attempt 3 === webhookMaxAttempts -> exhausted.
   await forceDueNow(delivery.id);

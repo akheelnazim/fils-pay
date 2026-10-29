@@ -91,9 +91,16 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 ### Test suite (Q)
 
+#### Q1 Flaky webhook backoff test
+- What's wrong: "failing endpoint: backoff/exhaustion…" failed on almost every run.
+- Why: it asserted `backoffDelayMs(1, config) === 1000` while the function applies random ±10% jitter by default.
+- What it breaks: the suite was never green, hiding real regressions in the webhook dispatcher.
+- Fix: the test passes a fixed jitter (0.5) for the expected value; the existing ±3 s tolerance on the stored delay absorbs the real jitter. No product code changed.
+- Test: `webhooks/backoff.fix.test.ts` (edge cases: jitter 0 / 0.5 / ~1 → 900 / 1000 / 1100 ms; 200 random draws stay in range; cap honoured) · ADR: none
+
 | ID | Bug | Status | Commit |
 | --- | --- | --- | --- |
-| Q1 | Dispatcher backoff test asserts an exact delay that carries random jitter (flaky) | open | |
+| Q1 | Dispatcher backoff test asserts an exact delay that carries random jitter (flaky) | fixed | `fix(Q1)` |
 | Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | open | |
 
 ## Audit check (2026-10-29)
