@@ -185,7 +185,8 @@ Keep each entry short. One per bug, under its ID:
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
 TS suite against a freshly migrated + seeded local DB: api 350/362, reporting 7/11,
-all other workspaces and scripts green. Go suite not yet run (Go not installed; use Docker).
+all other workspaces green; `scripts/` 5/5 (run separately: `npm test` stops before them while
+the API has failures). Go suite not yet run (Go not installed; use Docker).
 These failed **before** any change, so a fix must not add to this list:
 
 - a full refund of a fully captured transaction lands on refunded

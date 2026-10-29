@@ -82,6 +82,11 @@ fix, and `docs:`/`chore:` for anything else. Never bundle two bugs.
   `filspay`/`filspay_dev_password`/`filspay`, port 5432), then `npm run migrate`.
 - TS tests: `DATABASE_URL=postgres://filspay:filspay_dev_password@localhost:5432/filspay npm test`
   (single file: `npx tsx --test path/to/file.test.ts`).
+  `npm test` chains workspaces and `scripts/` with `&&`, so while the API has its baseline
+  failures the `scripts/*.test.ts` never run: also run `npx tsx --test scripts/*.test.ts`.
+  If many webhook dispatcher tests fail at once, it's a local backlog of pending deliveries
+  from earlier runs (the dispatcher takes 100 per pass); clear it in the local DB only:
+  `UPDATE webhook_deliveries SET status = 'exhausted' WHERE status = 'pending'`.
 - Go tests (Go isn't installed locally):
   `docker run --rm -v "$PWD/apps/settlement:/src" -w /src -e DATABASE_URL=postgres://filspay:filspay_dev_password@host.docker.internal:5432/filspay golang:1.22 go test ./...`
 - Never run anything in `scripts/` against data to "test" it.
