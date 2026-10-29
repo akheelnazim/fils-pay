@@ -17,7 +17,7 @@ bites. The step-by-step workflow is `.claude/skills/fix-and-build/SKILL.md`; sta
    Go with `-p 1`.
 6. **Reviewer agent** reads the diff and hunts for breakage; apply its valid points (it has caught
    real gaps every few fixes).
-7. **FIXLOG entry** (Clue if the evidence transcript matches, what, why, impact, fix, test) under
+7. **FIXLOG entry** (Where = primary file or directory, Clue if the evidence transcript matches, what, why, impact, fix, test) under
    its class, then **one commit** `fix(<ID>): …` with What/Why/Impact/Fix/Test/Checked, and push.
 
 ## Lessons

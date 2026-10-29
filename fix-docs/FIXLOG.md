@@ -11,25 +11,25 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 ### Security (S)
 
-| ID | Bug | Status | Commit |
-| --- | --- | --- | --- |
-| S1 | Login works without OTP | fixed | `fix(S1)` |
-| S2 | OTP/session issued to another merchant's user | fixed | `fix(S2)` |
-| S3 | Cancel another merchant's payment link (IDOR) | fixed | `fix(S3)` |
-| S4 | Expired payment link still payable (FP-187) | fixed | `fix(S4)` |
-| S5 | Outbound webhook signature mismatch (FP-240) | fixed | `fix(S5)` |
-| S6 | Inbound acquirer signature check weak (FP-240) | fixed | `fix(S6)` |
-| S7 | Rotated API key keeps working | fixed | `fix(S7)` |
-| S8 | Impersonation gets write access | fixed | `fix(S8)` |
-| S9 | Weak, brute-forceable OTP | fixed | `fix(S9)` |
-| S10 | Credit self-approval compares display name | fixed | `fix(S10)` |
-| S11 | Secret committed in `ops/.env.docker` | fixed (rotate still needed) | `fix(S11)` |
-| S12 | Any admin (incl. support) can issue merchant credits; no role check on create | fixed | `fix(S12)` |
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
+| S1 | Login works without OTP | `apps/api/src/auth/sessions.ts` | fixed | `fix(S1)` |
+| S2 | OTP/session issued to another merchant's user | `apps/api/src/routes/auth.ts` | fixed | `fix(S2)` |
+| S3 | Cancel another merchant's payment link (IDOR) | `apps/api/src/paymentLinks/cancel.ts` | fixed | `fix(S3)` |
+| S4 | Expired payment link still payable (FP-187) | `apps/api/src/paymentLinks/pay.ts` | fixed | `fix(S4)` |
+| S5 | Outbound webhook signature mismatch (FP-240) | `apps/api/src/webhooks/dispatcher.ts` | fixed | `fix(S5)` |
+| S6 | Inbound acquirer signature check weak (FP-240) | `apps/api/src/webhooks/inboundVerify.ts` | fixed | `fix(S6)` |
+| S7 | Rotated API key keeps working | `apps/api/src/admin/apiKeys.ts` | fixed | `fix(S7)` |
+| S8 | Impersonation gets write access | `apps/api/src/admin/impersonation.ts` | fixed | `fix(S8)` |
+| S9 | Weak, brute-forceable OTP | `apps/api/src/lib/random.ts` | fixed | `fix(S9)` |
+| S10 | Credit self-approval compares display name | `apps/api/src/admin/creditApproval.ts` | fixed | `fix(S10)` |
+| S11 | Secret committed in `ops/.env.docker` | `ops/.env.docker` | fixed (rotate still needed) | `fix(S11)` |
+| S12 | Any admin (incl. support) can issue merchant credits; no role check on create | `apps/api/src/routes/adminCredits.ts` | fixed | `fix(S12)` |
 
 ### Races and duplicates (R)
 
-| ID | Bug | Status | Commit |
-| --- | --- | --- | --- |
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
 | R1 | Payment link charged twice (2026-05-14) | open | |
 | R2 | Duplicate acquirer callback notes (FP-201) | open | |
 | R3 | Duplicate payout notifications (2026-08-21) | open | |
@@ -37,15 +37,15 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 ### Money correctness (M)
 
-| ID | Bug | Status | Commit |
-| --- | --- | --- | --- |
-| M1 | CSV import reads BD as cents (10x) | fixed | `fix(M1)` |
-| M2 | Scheme statement always a few fils high | fixed | `fix(M2)` |
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
+| M1 | CSV import reads BD as cents (10x) | `apps/api/src/admin/adjustmentCsvParsing.ts` | fixed | `fix(M1)` |
+| M2 | Scheme statement always a few fils high | `apps/settlement/internal/settlement/batch.go` | fixed | `fix(M2)` |
 | M3 | Split payouts short every batch | open | |
-| M4 | Net payout computed in float32 | fixed | `fix(M4)` |
+| M4 | Net payout computed in float32 | `apps/settlement/internal/settlement/payable.go` | fixed | `fix(M4)` |
 | M5 | Lifetime payout estimate drifts (REAL) | open | |
 | M6 | Platform volume counter overflows int32 | open | |
-| M7 | Dashboard fee 245 vs charged 225 bps | fixed | `fix(M7)` |
+| M7 | Dashboard fee 245 vs charged 225 bps | `apps/api/src/fees/currentFeeScheduleDisplay.ts` | fixed | `fix(M7)` |
 | M8 | MDR recalculation rewrites paid batches | open | |
 | M9 | Recalculate balances button 135K → 7K (FP-203) | open | |
 | M10 | Settlement summary double-counts multi-capture | open | |
@@ -57,27 +57,27 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 ### Settlement timing and test merchants (T)
 
-| ID | Bug | Status | Commit |
-| --- | --- | --- | --- |
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
 | T1 | Daily close runs 03:00 Bahrain, not midnight | open | |
 | T2 | Admin tool flips test merchants into settlement | open | |
 
 ### Scripts and other (X)
 
-| ID | Bug | Status | Commit |
-| --- | --- | --- | --- |
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
 | X1 | `expire_holds.ts` can delete every hold | open | |
 | X2 | March sweep script not idempotent | open | |
 | X3 | Large export can OOM the API | open | |
 | X4 | Credit threshold can be split around | open | |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
-| X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | fixed | `fix(X8)` |
+| X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `fix(X8)` |
 
 ### Deploy and setup (D)
 
-| ID | Bug | Status | Commit |
-| --- | --- | --- | --- |
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
 | D1 | Migration 0054 references missing table | open | |
 | D2 | Migration 0055 uses non-existent columns | open | |
 | D3 | Dev webhook key fallback is 34 bytes, not 32 | open | |
@@ -86,8 +86,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 ### FP-300 refunds (feature, last) (F)
 
-| ID | Bug | Status | Commit |
-| --- | --- | --- | --- |
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
 | FP-300 | Refunds (F1–F13) | open | |
 | F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | open | |
 
@@ -107,11 +107,11 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 - Fix: the fixture uses an inert, already-processed event type (`archive.test_fixture`); the archive code only reads `webhook_deliveries`, so its tests are unaffected. Local polluted rows cleaned in the dev DB only.
 - Test: full suite run: no new empty-payload events; archive tests pass. The reporting tests then exposed a real bug, **X8** · ADR: none
 
-| ID | Bug | Status | Commit |
-| --- | --- | --- | --- |
-| Q1 | Dispatcher backoff test asserts an exact delay that carries random jitter (flaky) | fixed | `fix(Q1)` |
-| Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | fixed | `fix(Q2)` |
-| Q3 | Go test packages run in parallel against one DB and deadlock in `RebuildAllBalances`; run with `-p 1` | fixed | `fix(Q3)` |
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
+| Q1 | Dispatcher backoff test asserts an exact delay that carries random jitter (flaky) | `apps/api/src/webhooks/dispatcher.test.ts` | fixed | `fix(Q1)` |
+| Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | `apps/api/src/webhooks/archiveReplay.test.ts` | fixed | `fix(Q2)` |
+| Q3 | Go test packages run in parallel against one DB and deadlock in `RebuildAllBalances`; run with `-p 1` | `apps/settlement/ (go test)` | fixed | `fix(Q3)` |
 
 ## Audit check (2026-10-29)
 
@@ -150,6 +150,7 @@ Keep each entry short. One per bug, under its class heading:
 
 ```markdown
 #### <ID> <title>
+- Where: <primary file or directory>
 - Clue: <matching symptom from the evidence transcript; omit if none>
 - What's wrong: <one line>
 - Why: <root cause, one line>
@@ -162,6 +163,7 @@ Keep each entry short. One per bug, under its class heading:
 ### Security (S)
 
 #### S1 Login works without OTP
+- Where: `apps/api/src/auth/sessions.ts`
 - Clue: "Login works without entering the OTP code?"
 - What's wrong: the cookie issued after the password step (before the OTP) works on every merchant route.
 - Why: `lookupSession` reads the `live_sessions` view, which drops revoked/expired sessions but not unverified ones.
@@ -170,6 +172,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `auth/sessions.fix.test.ts` (pending session returned a row before, null now) · ADR: none
 
 #### S2 OTP/session issued to another merchant's user
+- Where: `apps/api/src/routes/auth.ts`
 - What's wrong: logging in to merchant B can create the session (and send the OTP) for merchant A's user with the same email.
 - Why: login looked the user up again by email across all merchants (`findOtpRecipient`, `LIMIT 1`) instead of using the user it had just checked.
 - What it breaks: a user of two merchants signs in to one and lands in the other's account and money (reproduced on the running API: Beta login → Alpha data).
@@ -177,6 +180,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `routes/auth.fix.test.ts` (session went to merchant A's user before, merchant B's now) · ADR: none
 
 #### S3 Cancel another merchant's payment link
+- Where: `apps/api/src/paymentLinks/cancel.ts`
 - Clue: "I cancelled merchant B's payment link from merchant A's dashboard"
 - What's wrong: any merchant can cancel any other merchant's payment link by its id.
 - Why: the route only checks the merchant in the URL is the caller; `cancelPaymentLink` updates by link id alone.
@@ -185,6 +189,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `routes/paymentLinks.fix.test.ts` (cross-merchant cancel gave 204 before, 404 now) · ADR: none
 
 #### S4 Expired payment link still payable (FP-187)
+- Where: `apps/api/src/paymentLinks/pay.ts`
 - Clue: "the link showed 'expired', but the payment still went through. The checkout page sends something that the server shouldn't trust."
 - What's wrong: an expired link is charged if the request carries an old `submittedAt`.
 - Why: `payPaymentLink` judged expiry against the client-sent `submittedAt` (any value, unauthenticated public route).
@@ -193,6 +198,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `paymentLinks/pay.fix.test.ts` (expired link with old `submittedAt` paid 200 before, 410 now) · ADR: none
 
 #### S5 Outbound webhook signature mismatch (FP-240)
+- Where: `apps/api/src/webhooks/dispatcher.ts`
 - Clue: "The part that signs the message and the part that sends it don't agree on what it looks like."
 - What's wrong: merchants can't verify our webhook signatures against the bytes they receive.
 - Why: `signPayload` signs sorted-key JSON (`canonicalJson`); the dispatcher and "send test event" sent `JSON.stringify` (original key order), so the signed and sent bytes differ.
@@ -201,6 +207,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `webhooks/sign.fix.test.ts` (raw-bytes HMAC failed before for both senders, passes now) · ADR: none
 
 #### S6 Inbound acquirer signature check weak (FP-240)
+- Where: `apps/api/src/webhooks/inboundVerify.ts`
 - Clue: "someone said the incoming signature check has its own problems."
 - What's wrong: unsigned acquirer callbacks were accepted, a captured genuine callback could be replayed forever, and the compare wasn't constant-time.
 - Why: `ACQUIRER_CALLBACK_REQUIRE_SIGNATURE` and the verifier both defaulted to "optional"; no timestamp check; homemade `Buffer.compare`.
@@ -209,6 +216,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `webhooks/inboundVerify.fix.test.ts` (unsigned, default config and replayed cases failed before, pass now) · ADR: none
 
 #### S7 Rotated API key keeps working
+- Where: `apps/api/src/admin/apiKeys.ts`
 - Clue: "there's a key rotation flow that doesn't do what you'd expect"
 - What's wrong: after staff rotate a merchant's API key, the old key keeps working forever.
 - Why: `rotateApiKeyAsAdmin` issues the new key but never sets `revoked_at` on the old one (0037's own design says rotation revokes it with reason 'rotated'); no sweep job exists.
@@ -217,6 +225,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `admin/apiKeys.fix.test.ts` (old key still verified after rotation before, null now) · ADR: none
 
 #### S8 Impersonation gets write access
+- Where: `apps/api/src/admin/impersonation.ts`
 - Clue: "some admin actions don't seem to have the right role checks"
 - What's wrong: "view as merchant" lets staff change the merchant's data; a super_admin acts as the merchant's owner.
 - Why: impersonation maps super_admin → owner and finance → finance; and capture, void and saved-filter routes have no role check at all, so even "support" could write.
@@ -225,6 +234,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `admin/impersonation.fix.test.ts` (owner role, link creation and saved-filter write all succeeded before, refused now; reads still work) · ADR: none
 
 #### S9 Weak, brute-forceable OTP
+- Where: `apps/api/src/lib/random.ts`
 - Clue: "the OTP implementation changed at some point. is it still safe?"
 - What's wrong: OTP codes came from `Math.random`, and parallel wrong guesses all got checked (20 of 20 on the admin login, 11 on merchant) despite a limit of 5.
 - Why: `lib/random.ts` used `Math.random`; both verify routes read `attempt_count`, compared, then incremented, so concurrent requests all saw the same count.
@@ -233,6 +243,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `auth/otp.fix.test.ts` (Math.random-derived codes and invite codes, over-limit parallel guesses on both logins, and resend resetting the budget all failed before, pass now) · ADR: none
 
 #### S10 Credit self-approval compares display name
+- Where: `apps/api/src/admin/creditApproval.ts`
 - What's wrong: the "second approver must be a different person" check on merchant credits compares display names.
 - Why: `assertDistinctApprover` compared `displayName`; names aren't unique, and the requester's name is snapshotted at request time while the approver's is current.
 - What it breaks: one operator can approve their own large credit after changing their display name; two different people with the same name can't approve each other.
@@ -240,6 +251,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `admin/creditApproval.fix.test.ts` (same id/different name and different ids/same name both wrong before, right now) · ADR: none
 
 #### S11 Secret committed in `ops/.env.docker`
+- Where: `ops/.env.docker`
 - What's wrong: the acquirer callback signing secret was committed (and pushed) in `ops/.env.docker`.
 - Why: `.gitignore` only covered `.env` and `.env.local`; a comment wrongly claimed `.env` matched `.env.docker` as a prefix.
 - What it breaks: anyone with repo access can forge acquirer callbacks (S6 makes signatures mandatory, so the secret is now the only gate).
@@ -247,6 +259,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `scripts/committed_secrets.fix.test.ts` (tracked .env file and secret value found before, none now) · ADR: none
 
 #### S12 Any admin can issue merchant credits
+- Where: `apps/api/src/routes/adminCredits.ts`
 - Clue: "some admin actions don't seem to have the right role checks"
 - What's wrong: a support admin can issue a credit to any merchant; ones under the threshold post to the ledger at once.
 - Why: `POST /v1/admin/merchants/:id/credits` sits in the route group that only requires an admin session; approve/reject are in the group that also requires finance/super_admin. The UI hides the form from support, but the server never checked.
@@ -259,6 +272,7 @@ Keep each entry short. One per bug, under its class heading:
 ### Money correctness (M)
 
 #### M1 CSV import reads BD as cents (10x)
+- Where: `apps/api/src/admin/adjustmentCsvParsing.ts`
 - Clue: "I uploaded 4.755 BD and the ledger shows 4.750. I uploaded 4.75 BD and it shows 0.475" (also #fp-finance: a 4,141.90 BD sheet posted as 414,190 fils)
 - What's wrong: the manual-adjustment CSV import posts every amount at a tenth of its value and drops the third decimal.
 - Why: `parseAdjustmentAmountFils` used `parseDecimalMinor(raw, 2)` (cents logic) instead of `parseBhdToFils`.
@@ -267,6 +281,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `admin/adjustmentCsvParsing.fix.test.ts` (2- and 3-decimal, whole, negative, 0.005, spaces; >3 decimals and junk rejected) · ADR: 0001
 
 #### M2 Scheme statement always a few fils high
+- Where: `apps/settlement/internal/settlement/batch.go`
 - Clue: "The scheme statement total is always a few fils higher than ours. It's always over, never under" (and #fp-finance: file line 93.28 vs amount_fils 93,270)
 - What's wrong: each scheme file line was the gross amount rounded half-up to 2 decimals, while our ledger uses the truncated `amount_fils`.
 - Why: `CloseBatch` stored `amount = SchemeAmountBD(grossFils)` (untruncated, float64) into `NUMERIC(10,2)`, which rounds; the file reads `amount` first.
@@ -275,6 +290,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `settlement/batch_fix_test.go` (4750, 4747, 4755, 93276, 9 fils; four were rounded up before, all exact now) · ADR: 0001, 0002
 
 #### M4 Net payout computed in float32
+- Where: `apps/settlement/internal/settlement/payable.go`
 - What's wrong: a batch's net payout (gross − fee) was computed through `float32` BD values.
 - Why: `NetPayableFils` converted both totals to `float32` BD, subtracted, then rounded back to fils; float32 has ~7 significant digits.
 - What it breaks: merchants are paid a few fils off on bigger batches (20,000.123 BD gross − 500.003 BD fee paid 1 fil short), growing with size (22,739 fils off on a 9-billion-fil batch). Breaks ADR-0001.
@@ -282,6 +298,7 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `settlement/payable_fix_test.go` (empty, ordinary, 123,456.789 BD, odd fils, very large; three were wrong before) · ADR: 0001
 
 #### M7 Fee shown 245 bps, charged 225 bps
+- Where: `apps/api/src/fees/currentFeeScheduleDisplay.ts`
 - Clue: "It shows 245bps, but payments go through at 225bps. The two fee tables have different dates, and one was a backfill fix."
 - What's wrong: the staff console's merchant page showed the most recently *typed-in* fee schedule, not the one in force.
 - Why: `getCurrentFeeScheduleForDisplay` ordered by `created_at`; billing (`feeSchedule.ts`) uses `effective_from <= now()` ordered by `effective_from DESC, created_at DESC`. The Go twin `LoadFeeSchedules` had no tie-break on same-day rates.
@@ -294,6 +311,7 @@ Keep each entry short. One per bug, under its class heading:
 ### Scripts and other (X)
 
 #### X8 Reporting crashes on its own lag check
+- Where: `apps/reporting/src/consumer/applyEvent.ts`
 - What's wrong: when a settlement batch closes for a day that has captures but no reporting rollup row, the reporting worker throws and stops.
 - Why: the "rollup lags ground truth" check read `captured_count` from a row it assumed exists; a missing row is exactly the lag it is meant to detect.
 - What it breaks: the reporting pass rolls back and retries the same event forever, so every dashboard total stops updating for all merchants.
@@ -307,6 +325,7 @@ Keep each entry short. One per bug, under its class heading:
 ### Test suite (Q)
 
 #### Q3 Go tests deadlock when packages run in parallel
+- Where: `apps/settlement/ (go test)`
 - What's wrong: `TestRebuildAllBalances_OverwritesDriftedCache` failed with `deadlock detected` on a plain `go test ./...`.
 - Why: Go runs test packages in parallel; ledger, internalapi and settlement tests all write `merchant_balances` in the same database, in different row orders.
 - What it breaks: a red Go suite that isn't a product failure.

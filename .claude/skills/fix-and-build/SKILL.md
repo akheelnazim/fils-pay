@@ -60,7 +60,8 @@ One bug (or one FP-300 gap) per run of this workflow, ending in exactly one comm
 - Check the screens (`apps/web`, `apps/admin`) that call a route you changed.
 - Mention anything the fix changes for callers in the commit's `Checked:` line.
 
-The FIXLOG entry stays short (template in FIXLOG): what's wrong, why, what it breaks,
+The FIXLOG entry stays short (template in FIXLOG): where (primary file or directory, also the
+tracker's Where column), what's wrong, why, what it breaks,
 the fix, the test. No long analysis.
 - Run the full suites (section 6). Compare with the baseline: no new failures.
 

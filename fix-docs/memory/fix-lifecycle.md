@@ -14,7 +14,7 @@ Per bug, in order:
 5. Grep callers in TS and Go; typecheck all workspaces; full suite vs baseline; `scripts/` tests
    separately; Go with `-p 1`.
 6. Reviewer agent (read-only, "verdict + file:line bullets"); apply its valid points.
-7. FIXLOG entry under its class (Clue if one matches, what, why, impact, fix, test); then one commit
+7. FIXLOG row (with the Where column) and entry under its class (Where, Clue if one matches, what, why, impact, fix, test); then one commit
    `fix(<ID>): …` with What/Why/Impact/Fix/Test/Checked; push.
 
 **Why:** the team wants a trackable, one-commit-per-bug history with proof and review.
