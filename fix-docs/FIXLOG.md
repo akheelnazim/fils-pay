@@ -14,7 +14,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S4 | Expired payment link still payable (FP-187) | fixed | `fix(S4)` |
 | S5 | Outbound webhook signature mismatch (FP-240) | fixed | `fix(S5)` |
 | S6 | Inbound acquirer signature check weak (FP-240) | fixed | `fix(S6)` |
-| S7 | Rotated API key keeps working | open | |
+| S7 | Rotated API key keeps working | fixed | `fix(S7)` |
 | S8 | Impersonation gets write access | open | |
 | S9 | Weak, brute-forceable OTP | open | |
 | S10 | Credit self-approval compares display name | open | |
@@ -142,6 +142,14 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: anyone can post fake fraud-review results onto any payment, or replay old ones.
 - Fix: signatures required by default (config and verifier), 300 s timestamp tolerance, `timingSafeEqualHex`, `v1` must be exactly 64 hex chars. Replays inside the 5-minute window are left to R2 (dedupe on `callback_id`). Updated two existing tests that locked in the old behaviour (fixed 2025 timestamps; "accepts unsigned callback"). Proper fix: verify the raw request bytes instead of `JSON.stringify` of the parsed body (needs raw-body capture on the route).
 - Test: `webhooks/inboundVerify.fix.test.ts` (unsigned, default config and replayed cases failed before, pass now) · ADR: none
+
+### S7 Rotated API key keeps working
+- Clue: "there's a key rotation flow that doesn't do what you'd expect"
+- What's wrong: after staff rotate a merchant's API key, the old key keeps working forever.
+- Why: `rotateApiKeyAsAdmin` issues the new key but never sets `revoked_at` on the old one (0037's own design says rotation revokes it with reason 'rotated'); no sweep job exists.
+- What it breaks: rotating a leaked key does nothing; whoever holds it keeps full API access.
+- Fix: revoke the old key (`revoked_at = now()`, `revoked_reason = 'rotated'`) in the same transaction. Updated `routes/admin.test.ts`, which asserted the old key stayed active. Alternative (not done): a short grace period via `revoke_after` + a sweep job; needs new code and the 0056 column (number reserved by ADR-0005).
+- Test: `admin/apiKeys.fix.test.ts` (old key still verified after rotation before, null now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
