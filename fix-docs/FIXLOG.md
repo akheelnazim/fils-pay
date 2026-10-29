@@ -11,7 +11,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S1 | Login works without OTP | fixed | `fix(S1)` |
 | S2 | OTP/session issued to another merchant's user | fixed | `fix(S2)` |
 | S3 | Cancel another merchant's payment link (IDOR) | fixed | `fix(S3)` |
-| S4 | Expired payment link still payable (FP-187) | open | |
+| S4 | Expired payment link still payable (FP-187) | fixed | `fix(S4)` |
 | S5 | Outbound webhook signature mismatch (FP-240) | open | |
 | S6 | Inbound acquirer signature check weak (FP-240) | open | |
 | S7 | Rotated API key keeps working | open | |
@@ -118,6 +118,14 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: a competitor or a leaked key can kill another shop's live links, so its customers can't pay.
 - Fix: `cancelPaymentLink` takes the merchant id and both its queries add `AND merchant_id = $2`; another merchant's link answers 404.
 - Test: `routes/paymentLinks.fix.test.ts` (cross-merchant cancel gave 204 before, 404 now) · ADR: none
+
+### S4 Expired payment link still payable (FP-187)
+- Clue: "the link showed 'expired', but the payment still went through. The checkout page sends something that the server shouldn't trust."
+- What's wrong: an expired link is charged if the request carries an old `submittedAt`.
+- Why: `payPaymentLink` judged expiry against the client-sent `submittedAt` (any value, unauthenticated public route).
+- What it breaks: shoppers pay stale links (old prices, cancelled orders); anyone can revive any expired link.
+- Fix: expiry uses the server clock (`new Date()`) in `pay.ts`; `submittedAt` is ignored. Proper fix: also drop `submittedAt` from the API body and checkout page and delete `expiryReferenceTime` + its unit tests in `pay.test.ts` (which assert the client time is honoured); not done here because it changes the public request shape and an existing test file.
+- Test: `paymentLinks/pay.fix.test.ts` (expired link with old `submittedAt` paid 200 before, 410 now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
