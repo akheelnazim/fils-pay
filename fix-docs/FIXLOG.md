@@ -9,7 +9,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | ID | Bug | Status | Commit |
 | --- | --- | --- | --- |
 | S1 | Login works without OTP | fixed | `fix(S1)` |
-| S2 | OTP/session issued to another merchant's user | open | |
+| S2 | OTP/session issued to another merchant's user | fixed | `fix(S2)` |
 | S3 | Cancel another merchant's payment link (IDOR) | open | |
 | S4 | Expired payment link still payable (FP-187) | open | |
 | S5 | Outbound webhook signature mismatch (FP-240) | open | |
@@ -103,6 +103,13 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: anyone with a merchant user's password reads and acts on that merchant's money (reproduced on the running API).
 - Fix: `AND s.authenticated = true` in `lookupSession` (`auth/sessions.ts`).
 - Test: `auth/sessions.fix.test.ts` (pending session returned a row before, null now) · ADR: none
+
+### S2 OTP/session issued to another merchant's user
+- What's wrong: logging in to merchant B can create the session (and send the OTP) for merchant A's user with the same email.
+- Why: login looked the user up again by email across all merchants (`findOtpRecipient`, `LIMIT 1`) instead of using the user it had just checked.
+- What it breaks: a user of two merchants signs in to one and lands in the other's account and money (reproduced on the running API: Beta login → Alpha data).
+- Fix: use the verified `user` as the OTP recipient; delete the unused `auth/users.ts`.
+- Test: `routes/auth.fix.test.ts` (session went to merchant A's user before, merchant B's now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
