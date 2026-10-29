@@ -53,6 +53,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M12 | `parsePromotionalDiscountFils` uses float × 100 | open | |
 | M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | open | |
 | M14 | Scheme residue never journaled (ADR-0002) | open | |
+| M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | open | |
 
 ### Settlement timing and test merchants (T)
 
@@ -110,7 +111,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | --- | --- | --- | --- |
 | Q1 | Dispatcher backoff test asserts an exact delay that carries random jitter (flaky) | fixed | `fix(Q1)` |
 | Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | fixed | `fix(Q2)` |
-| Q3 | Go test packages run in parallel against one DB and deadlock in `RebuildAllBalances`; run with `-p 1` | open | |
+| Q3 | Go test packages run in parallel against one DB and deadlock in `RebuildAllBalances`; run with `-p 1` | fixed | `fix(Q3)` |
 
 ## Audit check (2026-10-29)
 
@@ -273,6 +274,13 @@ Keep each entry short. One per bug, under its class heading:
 ### FP-300 refunds (feature, last) (F)
 
 ### Test suite (Q)
+
+#### Q3 Go tests deadlock when packages run in parallel
+- What's wrong: `TestRebuildAllBalances_OverwritesDriftedCache` failed with `deadlock detected` on a plain `go test ./...`.
+- Why: Go runs test packages in parallel; ledger, internalapi and settlement tests all write `merchant_balances` in the same database, in different row orders.
+- What it breaks: a red Go suite that isn't a product failure.
+- Fix: run Go tests with `go test -p 1` (skill updated); all Go packages pass that way. Related real issue logged as M15.
+- Test: `go test -p 1 ./...` all ok · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 

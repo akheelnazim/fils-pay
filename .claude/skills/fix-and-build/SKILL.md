@@ -88,7 +88,8 @@ fix, and `docs:`/`chore:` for anything else. Never bundle two bugs.
   from earlier runs (the dispatcher takes 100 per pass); clear it in the local DB only:
   `UPDATE webhook_deliveries SET status = 'exhausted' WHERE status = 'pending'`.
 - Go tests (Go isn't installed locally):
-  `docker run --rm -v "$PWD/apps/settlement:/src" -w /src -e DATABASE_URL=postgres://filspay:filspay_dev_password@host.docker.internal:5432/filspay golang:1.22 go test ./...`
+  `MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/apps/settlement:/src" -v filspay-gomod:/go/pkg/mod -w /src -e DATABASE_URL=postgres://filspay:filspay_dev_password@host.docker.internal:5432/filspay golang:1.22 go test -p 1 ./...`
+  (`-p 1`: packages share one database and deadlock if run in parallel, Q3.)
 - Never run anything in `scripts/` against data to "test" it.
 
 ## FP-300 refunds
