@@ -17,7 +17,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S7 | Rotated API key keeps working | fixed | `fix(S7)` |
 | S8 | Impersonation gets write access | fixed | `fix(S8)` |
 | S9 | Weak, brute-forceable OTP | fixed | `fix(S9)` |
-| S10 | Credit self-approval compares display name | open | |
+| S10 | Credit self-approval compares display name | fixed | `fix(S10)` |
 | S11 | Secret committed in `ops/.env.docker` | open | |
 | R1 | Payment link charged twice (2026-05-14) | open | |
 | R2 | Duplicate acquirer callback notes (FP-201) | open | |
@@ -166,6 +166,13 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: an attacker with a password can predict or brute-force the second factor; the same weak generator made payment link tokens guessable.
 - Fix: `lib/random.ts` uses `crypto.randomInt` (covers OTP, admin OTP, payment link tokens, display refs) and admin invite codes now use it too; both verify routes claim an attempt with one atomic `UPDATE … WHERE attempt_count < max_attempts AND consumed_at IS NULL AND expires_at > now() RETURNING` before comparing; resend locks the old challenge and copies its `attempt_count` to the new one (it used to reset to 0, giving 5 fresh guesses every 30 s).
 - Test: `auth/otp.fix.test.ts` (Math.random-derived codes and invite codes, over-limit parallel guesses on both logins, and resend resetting the budget all failed before, pass now) · ADR: none
+
+### S10 Credit self-approval compares display name
+- What's wrong: the "second approver must be a different person" check on merchant credits compares display names.
+- Why: `assertDistinctApprover` compared `displayName`; names aren't unique, and the requester's name is snapshotted at request time while the approver's is current.
+- What it breaks: one operator can approve their own large credit after changing their display name; two different people with the same name can't approve each other.
+- Fix: compare `adminUserId`.
+- Test: `admin/creditApproval.fix.test.ts` (same id/different name and different ids/same name both wrong before, right now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
