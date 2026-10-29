@@ -10,7 +10,9 @@ A Bahrain card-payments platform handed over with bugs. The job: **fix the audit
 - `fix-docs/FIXLOG.md` — the tracker. Every fix updates its row and adds an entry.
   Also holds the list of tests that failed before any fix.
 - `.claude/skills/fix-and-build/` — **the workflow for every fix and every FP-300 step**
-  (failing test first, smallest vs proper fix, caller checks, commit format). Use it.
+  (failing test first, smallest vs proper fix, caller checks, reviewer agent, commit format). Use it.
+- `fix-docs/LESSONS.md` — **read first**: the fix lifecycle in short and what has bitten us
+  (lying comments, docs claiming fixes that never landed, tests that lock in bugs, shared test DB).
 
 ## Ground truths (checked against code and the brief)
 
@@ -25,7 +27,11 @@ A Bahrain card-payments platform handed over with bugs. The job: **fix the audit
 ## Rules
 
 - One bug = one commit, with a descriptive message. Never bundle fixes.
-- Every reported bug gets a failing test before it is fixed.
+- Every reported bug gets a failing test before it is fixed, plus edge cases where they apply.
+- A reviewer agent checks every fix for breakage before it is committed.
+- Order: the audit's suggested order, then remaining and newly found bugs by complexity;
+  FP-300 (refunds) last, built with the superpowers skills against the tests the audit lists.
+- Keep the code style the same as the code around the change.
 - When the smallest fix and the "right" fix differ, do the smallest, record both in
   FIXLOG, and tell the user.
 - Before changing anything, check every place that uses it (TS **and** Go duplicate

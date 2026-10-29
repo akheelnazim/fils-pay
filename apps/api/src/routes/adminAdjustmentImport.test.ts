@@ -234,7 +234,6 @@ test("the import history lists past uploads and is readable by any admin role", 
 });
 
 // M1: amounts are BD with up to three decimals; 4.75 BD = 4750 fils.
-// M1: amounts are BD with up to three decimals (finance sheets use two).
 test("per-row detail shows the raw text next to the parsed integer", async () => {
   const admin = await signedInAdmin("finance");
   const merchantId = await createMerchant();

@@ -18,8 +18,14 @@ One bug (or one FP-300 gap) per run of this workflow, ending in exactly one comm
   purpose.
 - ADRs in `docs/adr/` are rules: the fix must follow them. Check FIXLOG "Against the ADRs"
   first. If a fix would contradict an ADR (e.g. M9 vs ADR-0004), stop and ask the user.
+- For anything bigger than a one-liner, read what the team decided and saw: `docs/meetings/`,
+  `docs/incidents/`, `docs/archive/slack-export-*.txt`. They often hold the evidence (and claims
+  of fixes that never landed: grep before believing). See `fix-docs/LESSONS.md`.
 
 ## 2. Write the failing test first
+
+- Add edge-case tests where they apply: zero, negative, rounding boundaries, the limit itself,
+  repeated or concurrent calls.
 
 - Add a **new** test file next to the code: `<name>.fix.test.ts` (TS) or
   `<name>_fix_test.go` (Go). Name the test after the bug ID, e.g. `S1: pending session
@@ -57,6 +63,12 @@ One bug (or one FP-300 gap) per run of this workflow, ending in exactly one comm
 The FIXLOG entry stays short (template in FIXLOG): what's wrong, why, what it breaks,
 the fix, the test. No long analysis.
 - Run the full suites (section 6). Compare with the baseline: no new failures.
+
+## 4b. Reviewer agent
+
+Spawn a read-only general-purpose reviewer with the bug, the fix, the files and the exact test
+commands; ask for "OK to commit" / "Problems found" plus file:line bullets. Tell it the old
+"never modify tests" rule is stale. Apply valid findings (re-review if the change was material).
 
 ## 5. Commit — one per bug
 
