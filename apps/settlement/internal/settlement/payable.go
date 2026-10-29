@@ -1,13 +1,11 @@
 package settlement
 
 import (
-	"math"
-
 	"github.com/filspay/settlement/internal/money"
 )
 
-// NetPayableFils derives the net payout from frozen gross and fee totals.
+// NetPayableFils derives the net payout from frozen gross and fee totals:
+// plain integer fils subtraction, never a float round-trip (ADR-0001, M4).
 func NetPayableFils(grossFils, feeFils money.Fils) money.Fils {
-	netBD := float32(grossFils)/1000 - float32(feeFils)/1000
-	return money.Fils(math.Round(float64(netBD) * 1000))
+	return grossFils - feeFils
 }

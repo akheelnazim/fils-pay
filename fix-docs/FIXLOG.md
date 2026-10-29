@@ -42,7 +42,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M1 | CSV import reads BD as cents (10x) | fixed | `fix(M1)` |
 | M2 | Scheme statement always a few fils high | fixed | `fix(M2)` |
 | M3 | Split payouts short every batch | open | |
-| M4 | Net payout computed in float32 | open | |
+| M4 | Net payout computed in float32 | fixed | `fix(M4)` |
 | M5 | Lifetime payout estimate drifts (REAL) | open | |
 | M6 | Platform volume counter overflows int32 | open | |
 | M7 | Dashboard fee 245 vs charged 225 bps | open | |
@@ -273,6 +273,13 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: the scheme is told up to 9 fils more per line than we book, every day (0.077 BD on Delta Wholesale on 14 Sep); finance can't tie out and blamed Visa.
 - Fix: store `formatFilsAsTwoDecimalString(truncated)` as an exact numeric string, so `amount` = `amount_fils / 1000` (ADR-0002) with no float (ADR-0001); deleted the float helper `SchemeAmountBD`. Rows already exported keep their old values (files already sent).
 - Test: `settlement/batch_fix_test.go` (4750, 4747, 4755, 93276, 9 fils; four were rounded up before, all exact now) · ADR: 0001, 0002
+
+#### M4 Net payout computed in float32
+- What's wrong: a batch's net payout (gross − fee) was computed through `float32` BD values.
+- Why: `NetPayableFils` converted both totals to `float32` BD, subtracted, then rounded back to fils; float32 has ~7 significant digits.
+- What it breaks: merchants are paid a few fils off on bigger batches (20,000.123 BD gross − 500.003 BD fee paid 1 fil short), growing with size (22,739 fils off on a 9-billion-fil batch). Breaks ADR-0001.
+- Fix: `return grossFils - feeFils`.
+- Test: `settlement/payable_fix_test.go` (empty, ordinary, 123,456.789 BD, odd fils, very large; three were wrong before) · ADR: 0001
 
 ### Settlement timing and test merchants (T)
 
