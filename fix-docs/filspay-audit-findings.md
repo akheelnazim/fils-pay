@@ -135,6 +135,7 @@ Tests that lock in bugs (you will need to update these, and say why in your note
   - Where: `apps/settlement/internal/internalapi/server.go:268` → `ledger.RefreshBalanceCache` → view `merchant_payable_position` (0054)
   - Why: the button rebuilds from a view that sums `scheme_export_lines` (gross captures that reached the scheme file), not the ledger. The CLI uses `RebuildAllBalances` over `ledger_entries`. ADR-0004 made this choice; HANDOVER says there must be no button that reads anything else.
   - Fix (1 line): call `ledger.RebuildAllBalances` in the handler. Side note: "Adjust balance" writes the cache only (ADR-0006), so every rebuild wipes support's adjustments, and ADMIN.md wrongly says adjustments are journaled.
+  - **Decision (owner):** the code follows the ADRs, not the other way round. ADR-0004 says the button rebuilds from settled data, so the one-line swap to `RebuildAllBalances` is **rejected**. Fix the settled-data path instead (the `merchant_payable_position` view / `RefreshBalanceCache`) so it gives the right figure. The ADR-0006 behaviour (rebuild resets adjustments) stays.
 - [ ] **M10. Settlement summary overcounts multi-capture merchants**
   - Where: `apps/api/src/settlement/query.ts:376`
   - Why: sums `t.captured_fils` (a running total) once per capture event. The "38% timing difference" in `docs/perf/2026-07-settlement-summary-slow.md` is double counting, and the fan-out is also why it was slow.
@@ -207,6 +208,7 @@ Done-when check: API end to end · ledger balanced in fils · fee reversal + pay
 
 - [ ] `ops/Dockerfile.node` and `ops/Dockerfile.go` are referenced by compose but **not in the repo** (MK promised to commit them in June). `docker compose up` fails until you write them.
 - [ ] Migration `0054_views.sql` creates a view on `settlement_batch_events`, a table that doesn't exist. A fresh `npm run migrate` will fail there; drop that view (nothing uses it). 0054–0056 were also "reserved" for v2 (ADR-0005).
+  - **Decision (owner):** ADR-0005 wins: 0054, 0055 and 0056 must not use those numbers. Move what's needed to new migrations (0073+): keep `merchant_payable_position` and `v_active_api_keys` from 0054 (the M9 button reads the first), drop `v_unbatched_capture_events`; fix or drop 0055 (wrong `chart_of_accounts` columns); keep 0056's `revoke_after` column (S7 may use it).
 - [ ] `ops/.env.docker` sets `NODE_ENV=production`, so secure cookies break on plain http localhost, and production requires `SETTLEMENT_INTERNAL_TOKEN`.
 - [ ] Set `ACQUIRER_CALLBACK_REQUIRE_SIGNATURE=true`, fresh secrets, `OTP_DEV_EXPOSE=false`.
 - [ ] Run exactly one settlement daemon (R3 until the index lands).
