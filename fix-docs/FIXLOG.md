@@ -16,7 +16,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S6 | Inbound acquirer signature check weak (FP-240) | fixed | `fix(S6)` |
 | S7 | Rotated API key keeps working | fixed | `fix(S7)` |
 | S8 | Impersonation gets write access | fixed | `fix(S8)` |
-| S9 | Weak, brute-forceable OTP | open | |
+| S9 | Weak, brute-forceable OTP | fixed | `fix(S9)` |
 | S10 | Credit self-approval compares display name | open | |
 | S11 | Secret committed in `ops/.env.docker` | open | |
 | R1 | Payment link charged twice (2026-05-14) | open | |
@@ -158,6 +158,14 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: staff can create/cancel links, change webhooks, capture or void payments as the merchant, and those writes are recorded as the merchant's own session.
 - Fix: every admin role maps to `support`, and `requireMerchantAuth` refuses any non-GET/HEAD request made under impersonation (403 `forbidden`). The audit's role-mapping alone would not have closed the role-free write routes. Proper fix: record impersonated writes as `admin_impersonation` in the writer-actor columns (needs a schema change), and add role checks to capture/void.
 - Test: `admin/impersonation.fix.test.ts` (owner role, link creation and saved-filter write all succeeded before, refused now; reads still work) · ADR: none
+
+### S9 Weak, brute-forceable OTP
+- Clue: "the OTP implementation changed at some point. is it still safe?"
+- What's wrong: OTP codes came from `Math.random`, and parallel wrong guesses all got checked (20 of 20 on the admin login, 11 on merchant) despite a limit of 5.
+- Why: `lib/random.ts` used `Math.random`; both verify routes read `attempt_count`, compared, then incremented, so concurrent requests all saw the same count.
+- What it breaks: an attacker with a password can predict or brute-force the second factor; the same weak generator made payment link tokens guessable.
+- Fix: `lib/random.ts` uses `crypto.randomInt` (covers OTP, admin OTP, payment link tokens, display refs) and admin invite codes now use it too; both verify routes claim an attempt with one atomic `UPDATE … WHERE attempt_count < max_attempts AND consumed_at IS NULL AND expires_at > now() RETURNING` before comparing; resend locks the old challenge and copies its `attempt_count` to the new one (it used to reset to 0, giving 5 fresh guesses every 30 s).
+- Test: `auth/otp.fix.test.ts` (Math.random-derived codes and invite codes, over-limit parallel guesses on both logins, and resend resetting the budget all failed before, pass now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 

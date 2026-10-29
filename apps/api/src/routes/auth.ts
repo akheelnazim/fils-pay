@@ -152,18 +152,32 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         throw new GoneError("otp_expired");
       }
 
-      // am: check-then-increment is fine, max_attempts=5 so worst case is 5 guesses
-      // MK: 5 guesses per parallel batch? if i fire 50 at once they all read attempt_count=0
-      if (challenge.attempt_count >= challenge.max_attempts) {
-        await revokeSession(app.db, pending.sessionId);
-        throw new TooManyRequestsError("too_many_attempts");
+      // Claim an attempt atomically before checking the code, so parallel
+      // guesses can't all read the same attempt_count (S9).
+      // Only a live challenge can be claimed, so a code replaced by a resend
+      // (consumed) can't keep being guessed against.
+      const attempt = await app.db.query(
+        `UPDATE otp_challenges SET attempt_count = attempt_count + 1
+          WHERE id = $1 AND attempt_count < max_attempts
+            AND consumed_at IS NULL AND expires_at > now()
+          RETURNING attempt_count`,
+        [challenge.id],
+      );
+      if (attempt.rowCount === 0) {
+        const state = await app.db.query<{ exhausted: boolean }>(
+          `SELECT attempt_count >= max_attempts AND consumed_at IS NULL AS exhausted
+             FROM otp_challenges WHERE id = $1`,
+          [challenge.id],
+        );
+        if (state.rows[0]?.exhausted) {
+          await revokeSession(app.db, pending.sessionId);
+          throw new TooManyRequestsError("too_many_attempts");
+        }
+        throw new GoneError("otp_expired");
       }
 
       const matches = verifyOtpCode(code, challenge.code_salt, challenge.code_hash);
       if (!matches) {
-        await app.db.query(`UPDATE otp_challenges SET attempt_count = attempt_count + 1 WHERE id = $1`, [
-          challenge.id,
-        ]);
         throw new UnauthorizedError("invalid_code");
       }
 
@@ -205,16 +219,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw new UnauthorizedError("no_pending_session");
     }
 
-    const existing = await app.db.query<{ id: string; created_at: Date }>(
-      `SELECT id, created_at FROM otp_challenges WHERE id = $1`,
-      [pending.otpChallengeId],
-    );
-    const existingChallenge = existing.rows[0];
-    if (existingChallenge && Date.now() - existingChallenge.created_at.getTime() < 30_000) {
-      throw new TooManyRequestsError("resend_too_soon");
-    }
-
     const { code, expiresAt } = await withTransaction(app.db, async (client) => {
+      // Locked so a concurrent verify can't spend attempts the new challenge
+      // then fails to inherit (S9).
+      const existing = await client.query<{ id: string; created_at: Date; attempt_count: number }>(
+        `SELECT id, created_at, attempt_count FROM otp_challenges WHERE id = $1 FOR UPDATE`,
+        [pending.otpChallengeId],
+      );
+      const existingChallenge = existing.rows[0];
+      if (existingChallenge && Date.now() - existingChallenge.created_at.getTime() < 30_000) {
+        throw new TooManyRequestsError("resend_too_soon");
+      }
       if (existingChallenge) {
         await client.query(`UPDATE otp_challenges SET consumed_at = now() WHERE id = $1`, [
           existingChallenge.id,
@@ -226,6 +241,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         codeLength: app.config.otpCodeLength,
         maxAttempts: app.config.otpMaxAttempts,
       });
+      // Carry the used guesses over so a resend never resets the budget (S9).
+      if (existingChallenge) {
+        await client.query(`UPDATE otp_challenges SET attempt_count = $2 WHERE id = $1`, [
+          challenge.id,
+          existingChallenge.attempt_count,
+        ]);
+      }
       await client.query(`UPDATE sessions SET otp_challenge_id = $1 WHERE id = $2`, [
         challenge.id,
         pending.sessionId,
