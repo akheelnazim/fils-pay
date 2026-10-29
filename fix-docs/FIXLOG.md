@@ -71,7 +71,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X4 | Credit threshold can be split around | open | |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
-| X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | open | |
+| X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | fixed | `fix(X8)` |
 
 ### Deploy and setup (D)
 
@@ -260,6 +260,13 @@ Keep each entry short. One per bug, under its class heading:
 ### Settlement timing and test merchants (T)
 
 ### Scripts and other (X)
+
+#### X8 Reporting crashes on its own lag check
+- What's wrong: when a settlement batch closes for a day that has captures but no reporting rollup row, the reporting worker throws and stops.
+- Why: the "rollup lags ground truth" check read `captured_count` from a row it assumed exists; a missing row is exactly the lag it is meant to detect.
+- What it breaks: the reporting pass rolls back and retries the same event forever, so every dashboard total stops updating for all merchants.
+- Fix: treat a missing rollup row as 0 and log the lag warning.
+- Test: `reporting/consumer/applyEvent.fix.test.ts` (crashed before, warns and records the payout trend now); reporting suite 12/12 · ADR: none
 
 ### Deploy and setup (D)
 
