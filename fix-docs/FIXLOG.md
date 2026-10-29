@@ -40,7 +40,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | ID | Bug | Status | Commit |
 | --- | --- | --- | --- |
 | M1 | CSV import reads BD as cents (10x) | fixed | `fix(M1)` |
-| M2 | Scheme statement always a few fils high | open | |
+| M2 | Scheme statement always a few fils high | fixed | `fix(M2)` |
 | M3 | Split payouts short every batch | open | |
 | M4 | Net payout computed in float32 | open | |
 | M5 | Lifetime payout estimate drifts (REAL) | open | |
@@ -265,6 +265,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: finance corrections post 10x too small (4.75 BD → 475 fils = 0.475 BD); 4.755 BD loses 5 fils; >3 decimals silently truncated.
 - Fix: `parseBhdToFils` (ADR-0001 rule 3); deleted the now-unused cents helper `lib/decimal.ts`; updated the import tests that asserted cents (475/600/125/350/500 → 4750/6000/1250/3500/5000).
 - Test: `admin/adjustmentCsvParsing.fix.test.ts` (2- and 3-decimal, whole, negative, 0.005, spaces; >3 decimals and junk rejected) · ADR: 0001
+
+#### M2 Scheme statement always a few fils high
+- Clue: "The scheme statement total is always a few fils higher than ours. It's always over, never under" (and #fp-finance: file line 93.28 vs amount_fils 93,270)
+- What's wrong: each scheme file line was the gross amount rounded half-up to 2 decimals, while our ledger uses the truncated `amount_fils`.
+- Why: `CloseBatch` stored `amount = SchemeAmountBD(grossFils)` (untruncated, float64) into `NUMERIC(10,2)`, which rounds; the file reads `amount` first.
+- What it breaks: the scheme is told up to 9 fils more per line than we book, every day (0.077 BD on Delta Wholesale on 14 Sep); finance can't tie out and blamed Visa.
+- Fix: store `formatFilsAsTwoDecimalString(truncated)` as an exact numeric string, so `amount` = `amount_fils / 1000` (ADR-0002) with no float (ADR-0001); deleted the float helper `SchemeAmountBD`. Rows already exported keep their old values (files already sent).
+- Test: `settlement/batch_fix_test.go` (4750, 4747, 4755, 93276, 9 fils; four were rounded up before, all exact now) · ADR: 0001, 0002
 
 ### Settlement timing and test merchants (T)
 

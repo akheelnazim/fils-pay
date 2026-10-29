@@ -24,11 +24,6 @@ func TruncateToSchemeAmount(grossFils money.Fils) money.Fils {
 	return (grossFils / 10) * 10
 }
 
-// SchemeAmountBD converts a transaction's gross fils to the BD value stored
-// in scheme_export_lines.amount (numeric(10,2)).
-func SchemeAmountBD(grossFils money.Fils) float64 {
-	return float64(grossFils) / 1000.0
-}
 
 // buildBatchClosedPayload builds the settlement.batch_closed outbox
 // payload, following the same shape convention the webhook dispatcher
@@ -68,7 +63,7 @@ type SchemeExportLine struct {
 func LoadSchemeExportLines(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) ([]SchemeExportLine, error) {
 	rows, err := db.Query(ctx, `
 		SELECT sel.line_sequence, t.acquirer_reference,
-		       COALESCE(sel.amount, sel.amount_fils::numeric / 1000)::text
+		       COALESCE(sel.amount, ROUND(sel.amount_fils::numeric / 1000, 2))::text
 		  FROM scheme_export_lines sel
 		  JOIN transactions t ON t.id = sel.transaction_id
 		 WHERE sel.settlement_batch_id = $1
