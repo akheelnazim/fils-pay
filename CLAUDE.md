@@ -11,6 +11,9 @@ A Bahrain card-payments platform handed over with bugs. The job: **fix the audit
   Also holds the list of tests that failed before any fix.
 - `.claude/skills/fix-and-build/` — **the workflow for every fix and every FP-300 step**
   (failing test first, smallest vs proper fix, caller checks, reviewer agent, commit format). Use it.
+- `fix-docs/memory/` — **shared memory, read at the start of every session**: commit autonomy,
+  fix lifecycle, project decisions, pitfalls. Kept in git so all collaborators share it; update it
+  here (not in a private memory folder) when you learn something durable.
 - `fix-docs/LESSONS.md` — **read first**: the fix lifecycle in short and what has bitten us
   (lying comments, docs claiming fixes that never landed, tests that lock in bugs, shared test DB).
 
