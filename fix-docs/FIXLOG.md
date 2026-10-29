@@ -1,10 +1,15 @@
 # Fix log
 
 One row per bug. One bug = one commit (test + fix + this log). IDs come from
-`filspay-audit-findings.md`. Status: `open` · `test` (failing test added) ·
+`filspay-audit-findings.md`. Classes: S security · R races · M money · T timing · X scripts/other · D deploy · F FP-300 · Q test suite.
+Status: `open` · `test` (failing test added) ·
 `fixed` · `wontfix` (say why).
 
 ## Tracker
+
+Grouped by bug class (prefix = audit section; new finds go at the end of their class).
+
+### Security (S)
 
 | ID | Bug | Status | Commit |
 | --- | --- | --- | --- |
@@ -20,10 +25,20 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S10 | Credit self-approval compares display name | fixed | `fix(S10)` |
 | S11 | Secret committed in `ops/.env.docker` | fixed (rotate still needed) | `fix(S11)` |
 | S12 | Any admin (incl. support) can issue merchant credits; no role check on create | fixed | `fix(S12)` |
+
+### Races and duplicates (R)
+
+| ID | Bug | Status | Commit |
+| --- | --- | --- | --- |
 | R1 | Payment link charged twice (2026-05-14) | open | |
 | R2 | Duplicate acquirer callback notes (FP-201) | open | |
 | R3 | Duplicate payout notifications (2026-08-21) | open | |
 | R5 | Adjustment CSV importable twice | open | |
+
+### Money correctness (M)
+
+| ID | Bug | Status | Commit |
+| --- | --- | --- | --- |
 | M1 | CSV import reads BD as cents (10x) | open | |
 | M2 | Scheme statement always a few fils high | open | |
 | M3 | Split payouts short every batch | open | |
@@ -38,22 +53,48 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | M12 | `parsePromotionalDiscountFils` uses float × 100 | open | |
 | M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | open | |
 | M14 | Scheme residue never journaled (ADR-0002) | open | |
+
+### Settlement timing and test merchants (T)
+
+| ID | Bug | Status | Commit |
+| --- | --- | --- | --- |
 | T1 | Daily close runs 03:00 Bahrain, not midnight | open | |
 | T2 | Admin tool flips test merchants into settlement | open | |
+
+### Scripts and other (X)
+
+| ID | Bug | Status | Commit |
+| --- | --- | --- | --- |
 | X1 | `expire_holds.ts` can delete every hold | open | |
 | X2 | March sweep script not idempotent | open | |
 | X3 | Large export can OOM the API | open | |
 | X4 | Credit threshold can be split around | open | |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
-| X7 | Test suite: flaky backoff assertion; archiveReplay test seeds empty real events | open | |
+
+### Deploy and setup (D)
+
+| ID | Bug | Status | Commit |
+| --- | --- | --- | --- |
 | D1 | Migration 0054 references missing table | open | |
 | D2 | Migration 0055 uses non-existent columns | open | |
 | D3 | Dev webhook key fallback is 34 bytes, not 32 | open | |
 | D4 | API has no CORS; dashboard can't call it | open | |
 | D5 | Dockerfiles referenced by compose are missing | open | |
+
+### FP-300 refunds (feature, last) (F)
+
+| ID | Bug | Status | Commit |
+| --- | --- | --- | --- |
 | FP-300 | Refunds (F1–F13) | open | |
 | F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | open | |
+
+### Test suite (Q)
+
+| ID | Bug | Status | Commit |
+| --- | --- | --- | --- |
+| Q1 | Dispatcher backoff test asserts an exact delay that carries random jitter (flaky) | open | |
+| Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | open | |
 
 ## Audit check (2026-10-29)
 
@@ -88,10 +129,10 @@ Corrections:
 
 ## Entries
 
-Keep each entry short. One per bug, under its ID:
+Keep each entry short. One per bug, under its class heading:
 
 ```markdown
-### <ID> <title>
+#### <ID> <title>
 - Clue: <matching symptom from the evidence transcript; omit if none>
 - What's wrong: <one line>
 - Why: <root cause, one line>
@@ -100,7 +141,10 @@ Keep each entry short. One per bug, under its ID:
 - Test: <file> · ADR: <number, if any> · Commit: <sha>
 ```
 
-### S1 Login works without OTP
+
+### Security (S)
+
+#### S1 Login works without OTP
 - Clue: "Login works without entering the OTP code?"
 - What's wrong: the cookie issued after the password step (before the OTP) works on every merchant route.
 - Why: `lookupSession` reads the `live_sessions` view, which drops revoked/expired sessions but not unverified ones.
@@ -108,14 +152,14 @@ Keep each entry short. One per bug, under its ID:
 - Fix: `AND s.authenticated = true` in `lookupSession` (`auth/sessions.ts`).
 - Test: `auth/sessions.fix.test.ts` (pending session returned a row before, null now) · ADR: none
 
-### S2 OTP/session issued to another merchant's user
+#### S2 OTP/session issued to another merchant's user
 - What's wrong: logging in to merchant B can create the session (and send the OTP) for merchant A's user with the same email.
 - Why: login looked the user up again by email across all merchants (`findOtpRecipient`, `LIMIT 1`) instead of using the user it had just checked.
 - What it breaks: a user of two merchants signs in to one and lands in the other's account and money (reproduced on the running API: Beta login → Alpha data).
 - Fix: use the verified `user` as the OTP recipient; delete the unused `auth/users.ts`.
 - Test: `routes/auth.fix.test.ts` (session went to merchant A's user before, merchant B's now) · ADR: none
 
-### S3 Cancel another merchant's payment link
+#### S3 Cancel another merchant's payment link
 - Clue: "I cancelled merchant B's payment link from merchant A's dashboard"
 - What's wrong: any merchant can cancel any other merchant's payment link by its id.
 - Why: the route only checks the merchant in the URL is the caller; `cancelPaymentLink` updates by link id alone.
@@ -123,7 +167,7 @@ Keep each entry short. One per bug, under its ID:
 - Fix: `cancelPaymentLink` takes the merchant id and both its queries add `AND merchant_id = $2`; another merchant's link answers 404.
 - Test: `routes/paymentLinks.fix.test.ts` (cross-merchant cancel gave 204 before, 404 now) · ADR: none
 
-### S4 Expired payment link still payable (FP-187)
+#### S4 Expired payment link still payable (FP-187)
 - Clue: "the link showed 'expired', but the payment still went through. The checkout page sends something that the server shouldn't trust."
 - What's wrong: an expired link is charged if the request carries an old `submittedAt`.
 - Why: `payPaymentLink` judged expiry against the client-sent `submittedAt` (any value, unauthenticated public route).
@@ -131,7 +175,7 @@ Keep each entry short. One per bug, under its ID:
 - Fix: expiry uses the server clock (`new Date()`) in `pay.ts`; `submittedAt` is ignored. Proper fix: also drop `submittedAt` from the API body and checkout page and delete `expiryReferenceTime` + its unit tests in `pay.test.ts` (which assert the client time is honoured); not done here because it changes the public request shape and an existing test file.
 - Test: `paymentLinks/pay.fix.test.ts` (expired link with old `submittedAt` paid 200 before, 410 now) · ADR: none
 
-### S5 Outbound webhook signature mismatch (FP-240)
+#### S5 Outbound webhook signature mismatch (FP-240)
 - Clue: "The part that signs the message and the part that sends it don't agree on what it looks like."
 - What's wrong: merchants can't verify our webhook signatures against the bytes they receive.
 - Why: `signPayload` signs sorted-key JSON (`canonicalJson`); the dispatcher and "send test event" sent `JSON.stringify` (original key order), so the signed and sent bytes differ.
@@ -139,7 +183,7 @@ Keep each entry short. One per bug, under its ID:
 - Fix: dispatcher and test-send now send `canonicalJson(payload)`, the exact string that was signed. Proper fix: serialise once and sign that string (signer takes raw bytes), so the two can never drift.
 - Test: `webhooks/sign.fix.test.ts` (raw-bytes HMAC failed before for both senders, passes now) · ADR: none
 
-### S6 Inbound acquirer signature check weak (FP-240)
+#### S6 Inbound acquirer signature check weak (FP-240)
 - Clue: "someone said the incoming signature check has its own problems."
 - What's wrong: unsigned acquirer callbacks were accepted, a captured genuine callback could be replayed forever, and the compare wasn't constant-time.
 - Why: `ACQUIRER_CALLBACK_REQUIRE_SIGNATURE` and the verifier both defaulted to "optional"; no timestamp check; homemade `Buffer.compare`.
@@ -147,7 +191,7 @@ Keep each entry short. One per bug, under its ID:
 - Fix: signatures required by default (config and verifier), 300 s timestamp tolerance, `timingSafeEqualHex`, `v1` must be exactly 64 hex chars. Replays inside the 5-minute window are left to R2 (dedupe on `callback_id`). Updated two existing tests that locked in the old behaviour (fixed 2025 timestamps; "accepts unsigned callback"). Proper fix: verify the raw request bytes instead of `JSON.stringify` of the parsed body (needs raw-body capture on the route).
 - Test: `webhooks/inboundVerify.fix.test.ts` (unsigned, default config and replayed cases failed before, pass now) · ADR: none
 
-### S7 Rotated API key keeps working
+#### S7 Rotated API key keeps working
 - Clue: "there's a key rotation flow that doesn't do what you'd expect"
 - What's wrong: after staff rotate a merchant's API key, the old key keeps working forever.
 - Why: `rotateApiKeyAsAdmin` issues the new key but never sets `revoked_at` on the old one (0037's own design says rotation revokes it with reason 'rotated'); no sweep job exists.
@@ -155,7 +199,7 @@ Keep each entry short. One per bug, under its ID:
 - Fix: revoke the old key (`revoked_at = now()`, `revoked_reason = 'rotated'`) in the same transaction. Updated `routes/admin.test.ts`, which asserted the old key stayed active. Alternative (not done): a short grace period via `revoke_after` + a sweep job; needs new code and the 0056 column (number reserved by ADR-0005).
 - Test: `admin/apiKeys.fix.test.ts` (old key still verified after rotation before, null now) · ADR: none
 
-### S8 Impersonation gets write access
+#### S8 Impersonation gets write access
 - Clue: "some admin actions don't seem to have the right role checks"
 - What's wrong: "view as merchant" lets staff change the merchant's data; a super_admin acts as the merchant's owner.
 - Why: impersonation maps super_admin → owner and finance → finance; and capture, void and saved-filter routes have no role check at all, so even "support" could write.
@@ -163,7 +207,7 @@ Keep each entry short. One per bug, under its ID:
 - Fix: every admin role maps to `support`, and `requireMerchantAuth` refuses any non-GET/HEAD request made under impersonation (403 `forbidden`). The audit's role-mapping alone would not have closed the role-free write routes. Proper fix: record impersonated writes as `admin_impersonation` in the writer-actor columns (needs a schema change), and add role checks to capture/void.
 - Test: `admin/impersonation.fix.test.ts` (owner role, link creation and saved-filter write all succeeded before, refused now; reads still work) · ADR: none
 
-### S9 Weak, brute-forceable OTP
+#### S9 Weak, brute-forceable OTP
 - Clue: "the OTP implementation changed at some point. is it still safe?"
 - What's wrong: OTP codes came from `Math.random`, and parallel wrong guesses all got checked (20 of 20 on the admin login, 11 on merchant) despite a limit of 5.
 - Why: `lib/random.ts` used `Math.random`; both verify routes read `attempt_count`, compared, then incremented, so concurrent requests all saw the same count.
@@ -171,27 +215,41 @@ Keep each entry short. One per bug, under its ID:
 - Fix: `lib/random.ts` uses `crypto.randomInt` (covers OTP, admin OTP, payment link tokens, display refs) and admin invite codes now use it too; both verify routes claim an attempt with one atomic `UPDATE … WHERE attempt_count < max_attempts AND consumed_at IS NULL AND expires_at > now() RETURNING` before comparing; resend locks the old challenge and copies its `attempt_count` to the new one (it used to reset to 0, giving 5 fresh guesses every 30 s).
 - Test: `auth/otp.fix.test.ts` (Math.random-derived codes and invite codes, over-limit parallel guesses on both logins, and resend resetting the budget all failed before, pass now) · ADR: none
 
-### S10 Credit self-approval compares display name
+#### S10 Credit self-approval compares display name
 - What's wrong: the "second approver must be a different person" check on merchant credits compares display names.
 - Why: `assertDistinctApprover` compared `displayName`; names aren't unique, and the requester's name is snapshotted at request time while the approver's is current.
 - What it breaks: one operator can approve their own large credit after changing their display name; two different people with the same name can't approve each other.
 - Fix: compare `adminUserId`.
 - Test: `admin/creditApproval.fix.test.ts` (same id/different name and different ids/same name both wrong before, right now) · ADR: none
 
-### S11 Secret committed in `ops/.env.docker`
+#### S11 Secret committed in `ops/.env.docker`
 - What's wrong: the acquirer callback signing secret was committed (and pushed) in `ops/.env.docker`.
 - Why: `.gitignore` only covered `.env` and `.env.local`; a comment wrongly claimed `.env` matched `.env.docker` as a prefix.
 - What it breaks: anyone with repo access can forge acquirer callbacks (S6 makes signatures mandatory, so the secret is now the only gate).
 - Fix: untracked `ops/.env.docker` (local copy kept), ignore `.env.*` except `*.example`, added `ops/.env.docker.example` with placeholders, README updated. **Still needed outside git:** rotate the secret with the acquirer; it remains in past commits on GitHub (purging needs a history rewrite + force-push, not done).
 - Test: `scripts/committed_secrets.fix.test.ts` (tracked .env file and secret value found before, none now) · ADR: none
 
-### S12 Any admin can issue merchant credits
+#### S12 Any admin can issue merchant credits
 - Clue: "some admin actions don't seem to have the right role checks"
 - What's wrong: a support admin can issue a credit to any merchant; ones under the threshold post to the ledger at once.
 - Why: `POST /v1/admin/merchants/:id/credits` sits in the route group that only requires an admin session; approve/reject are in the group that also requires finance/super_admin. The UI hides the form from support, but the server never checked.
 - What it breaks: any support login can move money to a merchant (up to 50.000 BD per credit without a second approver).
 - Fix: `requireAdminRole("finance", "super_admin")` on the create route.
 - Test: `routes/adminCredits.fix.test.ts` (support create returned 201 before, 403 now; finance still 201) · ADR: none
+
+### Races and duplicates (R)
+
+### Money correctness (M)
+
+### Settlement timing and test merchants (T)
+
+### Scripts and other (X)
+
+### Deploy and setup (D)
+
+### FP-300 refunds (feature, last) (F)
+
+### Test suite (Q)
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
@@ -221,9 +279,9 @@ Why they fail (checked 2026-10-30):
 - 11 refund tests → **F14**: `processRefund` inserts `reason` as an explicit `NULL`; 0070's
   column default only applies when the column is omitted, so its `CHECK (reason IS NOT NULL)`
   rejects every refund. A real FP-300 bug, not a test problem.
-- 1 dispatcher test → **X7**: asserts `backoffDelayMs(1) === 1000`, but the function applies a random
+- 1 dispatcher test → **Q1**: asserts `backoffDelayMs(1) === 1000`, but the function applies a random
   ±10% jitter by default, so it fails almost every run. Test bug.
-- 4 reporting tests → **X7/X6**: `webhooks/archiveReplay.test.ts` inserts real event types
+- 4 reporting tests → **Q2** (and X6): `webhooks/archiveReplay.test.ts` inserts real event types
   (`transaction.captured`/`voided`) with `{}` payloads into the shared DB; the reporting consumer
   later reads them and crashes on the missing `merchantId`. With those rows neutralised in a DB
   copy, reporting passes 11/11. It also shows **X6**: one bad event stops the consumer for good.
