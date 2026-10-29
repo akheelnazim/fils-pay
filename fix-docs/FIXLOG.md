@@ -43,6 +43,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | X2 | March sweep script not idempotent | open | |
 | X3 | Large export can OOM the API | open | |
 | X4 | Credit threshold can be split around | open | |
+| X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
 | D1 | Migration 0054 references missing table | open | |
 | D2 | Migration 0055 uses non-existent columns | open | |
 | D3 | Dev webhook key fallback is 34 bytes, not 32 | open | |
@@ -63,15 +64,22 @@ Corrections:
 ## Against the ADRs (rules the code must follow)
 
 - ADR-0001 (integer fils, BIGINT, `parseBhdToFils`, no floats): backs M1, M4, M5, M6, M12, M13.
+  The audit's M2 fix still sends a `float64` (`SchemeAmountBD`); ADR-safe version computes
+  `amount_fils::numeric / 1000` in SQL. Other `toFixed`/float hits are rate labels and progress
+  bars, not money. Audit fixes for M3 (`allocateRemainder`) and F5 (`bankersRoundDiv`) comply.
 - ADR-0002 (residue journaled in CloseBatch, "implemented"): no code posts it → **M14**. Also says
-  the scheme `amount` must be exactly `amount_fils / 1000`, which is M2's fix.
+  the scheme `amount` must be exactly `amount_fils / 1000`, which is M2's fix. The March script
+  books residue as debit `merchant_payable` / credit `scheme_rounding_residue`; ADR-0002 says
+  credit `card_scheme_clearing` / debit residue → **X5** (merchants were charged the residue).
 - ADR-0003 (calendar-month scripts use the UTC month): the March script's UTC month is **correct**.
   X2 fix = idempotency guard + dry run only; don't change the window.
 - ADR-0004 (console button rebuilds from settled data, not the ledger): the audit's M9 fix
   contradicts it. **Needs your decision**: keep the ADR, or write a superseding ADR, then fix.
 - ADR-0005 (migrations 0054–0056 reserved for settlement v2, never reuse): 0054, 0055, 0056 in
   this repo break it. D1/D2 fix = remove/renumber them; 0056 (`revoke_after`) needs a new number.
-- ADR-0006 (Adjust balance is cache-only; rebuild resets it): by design, not a bug.
+- ADR-0006 (Adjust balance is cache-only; rebuild resets it): by design, not a bug. Code matches
+  (cache + audit row; journaled variant exists, not exposed).
+- New migrations (R2, R3, M5, M6) start at 0073, which ADR-0005 allows.
 
 ## Entries
 
