@@ -19,7 +19,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S9 | Weak, brute-forceable OTP | fixed | `fix(S9)` |
 | S10 | Credit self-approval compares display name | fixed | `fix(S10)` |
 | S11 | Secret committed in `ops/.env.docker` | fixed (rotate still needed) | `fix(S11)` |
-| S12 | Any admin (incl. support) can issue merchant credits; no role check on create | open | |
+| S12 | Any admin (incl. support) can issue merchant credits; no role check on create | fixed | `fix(S12)` |
 | R1 | Payment link charged twice (2026-05-14) | open | |
 | R2 | Duplicate acquirer callback notes (FP-201) | open | |
 | R3 | Duplicate payout notifications (2026-08-21) | open | |
@@ -181,6 +181,14 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: anyone with repo access can forge acquirer callbacks (S6 makes signatures mandatory, so the secret is now the only gate).
 - Fix: untracked `ops/.env.docker` (local copy kept), ignore `.env.*` except `*.example`, added `ops/.env.docker.example` with placeholders, README updated. **Still needed outside git:** rotate the secret with the acquirer; it remains in past commits on GitHub (purging needs a history rewrite + force-push, not done).
 - Test: `scripts/committed_secrets.fix.test.ts` (tracked .env file and secret value found before, none now) · ADR: none
+
+### S12 Any admin can issue merchant credits
+- Clue: "some admin actions don't seem to have the right role checks"
+- What's wrong: a support admin can issue a credit to any merchant; ones under the threshold post to the ledger at once.
+- Why: `POST /v1/admin/merchants/:id/credits` sits in the route group that only requires an admin session; approve/reject are in the group that also requires finance/super_admin. The UI hides the form from support, but the server never checked.
+- What it breaks: any support login can move money to a merchant (up to 50.000 BD per credit without a second approver).
+- Fix: `requireAdminRole("finance", "super_admin")` on the create route.
+- Test: `routes/adminCredits.fix.test.ts` (support create returned 201 before, 403 now; finance still 201) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 

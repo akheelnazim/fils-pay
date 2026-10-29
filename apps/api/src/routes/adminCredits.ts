@@ -61,6 +61,8 @@ export async function adminCreditRoutes(app: FastifyInstance): Promise<void> {
 
     scope.post<{ Params: MerchantIdParams; Body: unknown }>(
       "/merchants/:id/credits",
+      // Issuing a credit can post money immediately: finance and super_admin only (S12).
+      { preHandler: requireAdminRole("finance", "super_admin") },
       async (request, reply) => {
         const adminAuth = request.adminAuth;
         if (!adminAuth) throw new UnauthorizedError("unauthenticated");
