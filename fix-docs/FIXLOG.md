@@ -13,7 +13,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S3 | Cancel another merchant's payment link (IDOR) | fixed | `fix(S3)` |
 | S4 | Expired payment link still payable (FP-187) | fixed | `fix(S4)` |
 | S5 | Outbound webhook signature mismatch (FP-240) | fixed | `fix(S5)` |
-| S6 | Inbound acquirer signature check weak (FP-240) | open | |
+| S6 | Inbound acquirer signature check weak (FP-240) | fixed | `fix(S6)` |
 | S7 | Rotated API key keeps working | open | |
 | S8 | Impersonation gets write access | open | |
 | S9 | Weak, brute-forceable OTP | open | |
@@ -134,6 +134,14 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: merchants following standard HMAC verification reject every webhook (payment and payout notices), or turn verification off.
 - Fix: dispatcher and test-send now send `canonicalJson(payload)`, the exact string that was signed. Proper fix: serialise once and sign that string (signer takes raw bytes), so the two can never drift.
 - Test: `webhooks/sign.fix.test.ts` (raw-bytes HMAC failed before for both senders, passes now) · ADR: none
+
+### S6 Inbound acquirer signature check weak (FP-240)
+- Clue: "someone said the incoming signature check has its own problems."
+- What's wrong: unsigned acquirer callbacks were accepted, a captured genuine callback could be replayed forever, and the compare wasn't constant-time.
+- Why: `ACQUIRER_CALLBACK_REQUIRE_SIGNATURE` and the verifier both defaulted to "optional"; no timestamp check; homemade `Buffer.compare`.
+- What it breaks: anyone can post fake fraud-review results onto any payment, or replay old ones.
+- Fix: signatures required by default (config and verifier), 300 s timestamp tolerance, `timingSafeEqualHex`, `v1` must be exactly 64 hex chars. Replays inside the 5-minute window are left to R2 (dedupe on `callback_id`). Updated two existing tests that locked in the old behaviour (fixed 2025 timestamps; "accepts unsigned callback"). Proper fix: verify the raw request bytes instead of `JSON.stringify` of the parsed body (needs raw-body capture on the route).
+- Test: `webhooks/inboundVerify.fix.test.ts` (unsigned, default config and replayed cases failed before, pass now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 

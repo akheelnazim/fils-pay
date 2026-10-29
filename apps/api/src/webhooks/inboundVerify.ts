@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { timingSafeEqualHex } from "../lib/crypto.js";
 
 /** Verifies the signature on an inbound acquirer callback. */
 
@@ -22,6 +23,8 @@ function parseAcquirerSignatureHeader(header: string): ParsedAcquirerSignatureHe
 
   if (!timestampStr || !signature) return null;
   if (!/^\d+$/.test(timestampStr)) return null;
+  // Exactly one sha256 hex digest; hex decoding would silently drop trailing junk.
+  if (!/^[0-9a-f]{64}$/.test(signature)) return null;
 
   const timestamp = Number.parseInt(timestampStr, 10);
   if (!Number.isFinite(timestamp)) return null;
@@ -29,25 +32,28 @@ function parseAcquirerSignatureHeader(header: string): ParsedAcquirerSignatureHe
   return { timestamp, signature };
 }
 
-/** There is no timestamp reason: freshness is not checked for inbound callbacks. */
-export type VerifyAcquirerCallbackFailureReason = "malformed_header" | "signature_mismatch";
+export type VerifyAcquirerCallbackFailureReason =
+  | "malformed_header"
+  | "signature_mismatch"
+  | "timestamp_out_of_tolerance";
 
 export interface VerifyAcquirerCallbackResult {
   valid: boolean;
   reason?: VerifyAcquirerCallbackFailureReason;
 }
 
-function constantTimeEquals(a: string, b: string): boolean {
-  return Buffer.from(a).length === Buffer.from(b).length &&
-    Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
-}
+/** How far a callback's signed timestamp may be from our clock (S6). */
+const CALLBACK_TOLERANCE_SECONDS = 300;
 
-/** Verifies the acquirer callback signature when present and required. */
+/** Verifies the acquirer callback signature. A missing header is rejected
+ *  unless `requireSignature` is explicitly false; a signature older or newer
+ *  than five minutes is rejected so a captured callback can't be replayed. */
 export function verifyAcquirerCallbackSignature(
   payload: unknown,
   header: string | undefined,
   secret: string,
-  requireSignature = false,
+  requireSignature = true,
+  now: number = Math.floor(Date.now() / 1000),
 ): VerifyAcquirerCallbackResult {
   if (!header) {
     return requireSignature
@@ -62,8 +68,12 @@ export function verifyAcquirerCallbackSignature(
     .update(`${parsed.timestamp}.${JSON.stringify(payload)}`)
     .digest("hex");
 
-  if (!constantTimeEquals(expected, parsed.signature)) {
+  if (!timingSafeEqualHex(expected, parsed.signature)) {
     return { valid: false, reason: "signature_mismatch" };
+  }
+
+  if (Math.abs(now - parsed.timestamp) > CALLBACK_TOLERANCE_SECONDS) {
+    return { valid: false, reason: "timestamp_out_of_tolerance" };
   }
 
   return { valid: true };
