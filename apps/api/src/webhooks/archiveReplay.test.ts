@@ -58,10 +58,14 @@ async function insertDelivery(
   endpointId: string,
   opts: { eventType: string; createdAt: string },
 ): Promise<string> {
+  // Q2: an inert event type, already processed. The delivery row below only
+  // needs *an* outbox row to point at; a real type like transaction.captured
+  // with an empty payload would be read by apps/reporting's consumer (which
+  // shares this database) and crash it on the missing merchantId.
   const outbox = await pool.query<{ id: string }>(
-    `INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, payload)
-     VALUES ($1, 'transaction', $2, '{}'::jsonb) RETURNING id`,
-    [opts.eventType, randomUUID()],
+    `INSERT INTO outbox_events (event_type, aggregate_type, aggregate_id, payload, processed_at)
+     VALUES ('archive.test_fixture', 'transaction', $1, '{}'::jsonb, now()) RETURNING id`,
+    [randomUUID()],
   );
   const outboxEventId = outbox.rows[0]!.id;
 

@@ -71,6 +71,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X4 | Credit threshold can be split around | open | |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
+| X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | open | |
 
 ### Deploy and setup (D)
 
@@ -98,10 +99,18 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 - Fix: the test passes a fixed jitter (0.5) for the expected value; the existing ±3 s tolerance on the stored delay absorbs the real jitter. No product code changed.
 - Test: `webhooks/backoff.fix.test.ts` (edge cases: jitter 0 / 0.5 / ~1 → 900 / 1000 / 1100 ms; 200 random draws stay in range; cap honoured) · ADR: none
 
+#### Q2 Archive replay test pollutes the shared database
+- What's wrong: the 4 reporting tests failed whenever the API tests ran first against the same database.
+- Why: `archiveReplay.test.ts` inserted real `transaction.captured`/`voided` outbox events with `{}` payloads; the reporting consumer later read them and crashed on the missing `merchantId`.
+- What it breaks: a red suite that hides real reporting regressions.
+- Fix: the fixture uses an inert, already-processed event type (`archive.test_fixture`); the archive code only reads `webhook_deliveries`, so its tests are unaffected. Local polluted rows cleaned in the dev DB only.
+- Test: full suite run: no new empty-payload events; archive tests pass. The reporting tests then exposed a real bug, **X8** · ADR: none
+
 | ID | Bug | Status | Commit |
 | --- | --- | --- | --- |
 | Q1 | Dispatcher backoff test asserts an exact delay that carries random jitter (flaky) | fixed | `fix(Q1)` |
-| Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | open | |
+| Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | fixed | `fix(Q2)` |
+| Q3 | Go test packages run in parallel against one DB and deadlock in `RebuildAllBalances`; run with `-p 1` | open | |
 
 ## Audit check (2026-10-29)
 
