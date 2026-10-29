@@ -12,7 +12,7 @@ import type {
  *
  * Applied immediately on upload: there is no preview or dry-run step.
  */
-// MK: amounts in BD, 2dp
+// Amounts are BD text with up to three decimals; the server parses them with parseBhdToFils (M1).
 export function uploadAdjustmentImport(
   csvContent: string,
   originalFilename?: string,

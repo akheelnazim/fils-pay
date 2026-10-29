@@ -39,7 +39,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 | ID | Bug | Status | Commit |
 | --- | --- | --- | --- |
-| M1 | CSV import reads BD as cents (10x) | open | |
+| M1 | CSV import reads BD as cents (10x) | fixed | `fix(M1)` |
 | M2 | Scheme statement always a few fils high | open | |
 | M3 | Split payouts short every batch | open | |
 | M4 | Net payout computed in float32 | open | |
@@ -257,6 +257,14 @@ Keep each entry short. One per bug, under its class heading:
 ### Races and duplicates (R)
 
 ### Money correctness (M)
+
+#### M1 CSV import reads BD as cents (10x)
+- Clue: "I uploaded 4.755 BD and the ledger shows 4.750. I uploaded 4.75 BD and it shows 0.475" (also #fp-finance: a 4,141.90 BD sheet posted as 414,190 fils)
+- What's wrong: the manual-adjustment CSV import posts every amount at a tenth of its value and drops the third decimal.
+- Why: `parseAdjustmentAmountFils` used `parseDecimalMinor(raw, 2)` (cents logic) instead of `parseBhdToFils`.
+- What it breaks: finance corrections post 10x too small (4.75 BD → 475 fils = 0.475 BD); 4.755 BD loses 5 fils; >3 decimals silently truncated.
+- Fix: `parseBhdToFils` (ADR-0001 rule 3); deleted the now-unused cents helper `lib/decimal.ts`; updated the import tests that asserted cents (475/600/125/350/500 → 4750/6000/1250/3500/5000).
+- Test: `admin/adjustmentCsvParsing.fix.test.ts` (2- and 3-decimal, whole, negative, 0.005, spaces; >3 decimals and junk rejected) · ADR: 0001
 
 ### Settlement timing and test merchants (T)
 
