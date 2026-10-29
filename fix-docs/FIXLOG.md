@@ -18,7 +18,7 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | S8 | Impersonation gets write access | fixed | `fix(S8)` |
 | S9 | Weak, brute-forceable OTP | fixed | `fix(S9)` |
 | S10 | Credit self-approval compares display name | fixed | `fix(S10)` |
-| S11 | Secret committed in `ops/.env.docker` | open | |
+| S11 | Secret committed in `ops/.env.docker` | fixed (rotate still needed) | `fix(S11)` |
 | S12 | Any admin (incl. support) can issue merchant credits; no role check on create | open | |
 | R1 | Payment link charged twice (2026-05-14) | open | |
 | R2 | Duplicate acquirer callback notes (FP-201) | open | |
@@ -174,6 +174,13 @@ Keep each entry short. One per bug, under its ID:
 - What it breaks: one operator can approve their own large credit after changing their display name; two different people with the same name can't approve each other.
 - Fix: compare `adminUserId`.
 - Test: `admin/creditApproval.fix.test.ts` (same id/different name and different ids/same name both wrong before, right now) · ADR: none
+
+### S11 Secret committed in `ops/.env.docker`
+- What's wrong: the acquirer callback signing secret was committed (and pushed) in `ops/.env.docker`.
+- Why: `.gitignore` only covered `.env` and `.env.local`; a comment wrongly claimed `.env` matched `.env.docker` as a prefix.
+- What it breaks: anyone with repo access can forge acquirer callbacks (S6 makes signatures mandatory, so the secret is now the only gate).
+- Fix: untracked `ops/.env.docker` (local copy kept), ignore `.env.*` except `*.example`, added `ops/.env.docker.example` with placeholders, README updated. **Still needed outside git:** rotate the secret with the acquirer; it remains in past commits on GitHub (purging needs a history rewrite + force-push, not done).
+- Test: `scripts/committed_secrets.fix.test.ts` (tracked .env file and secret value found before, none now) · ADR: none
 
 ## Baseline before any fix (2026-10-29, commit ee6be80 code)
 
