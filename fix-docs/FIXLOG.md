@@ -45,12 +45,15 @@ One row per bug. One bug = one commit (test + fix + this log). IDs come from
 | X3 | Large export can OOM the API | open | |
 | X4 | Credit threshold can be split around | open | |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
+| X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
+| X7 | Test suite: flaky backoff assertion; archiveReplay test seeds empty real events | open | |
 | D1 | Migration 0054 references missing table | open | |
 | D2 | Migration 0055 uses non-existent columns | open | |
 | D3 | Dev webhook key fallback is 34 bytes, not 32 | open | |
 | D4 | API has no CORS; dashboard can't call it | open | |
 | D5 | Dockerfiles referenced by compose are missing | open | |
 | FP-300 | Refunds (F1–F13) | open | |
+| F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | open | |
 
 ## Audit check (2026-10-29)
 
@@ -213,3 +216,14 @@ These failed **before** any change, so a fix must not add to this list:
 - runConsumerPass: end-to-end over real events with the producers' exact payload shapes populates merchant_daily_volume and advances the watermark
 - runConsumerPass: end-to-end settlement.batch_closed populates merchant_payout_trends
 - runConsumerPass: atomicity — an apply failure partway through a multi-event batch rolls back the WHOLE pass, neither watermark nor any rollup write from that batch persists
+
+Why they fail (checked 2026-10-30):
+- 11 refund tests → **F14**: `processRefund` inserts `reason` as an explicit `NULL`; 0070's
+  column default only applies when the column is omitted, so its `CHECK (reason IS NOT NULL)`
+  rejects every refund. A real FP-300 bug, not a test problem.
+- 1 dispatcher test → **X7**: asserts `backoffDelayMs(1) === 1000`, but the function applies a random
+  ±10% jitter by default, so it fails almost every run. Test bug.
+- 4 reporting tests → **X7/X6**: `webhooks/archiveReplay.test.ts` inserts real event types
+  (`transaction.captured`/`voided`) with `{}` payloads into the shared DB; the reporting consumer
+  later reads them and crashes on the missing `merchantId`. With those rows neutralised in a DB
+  copy, reporting passes 11/11. It also shows **X6**: one bad event stops the consumer for good.
