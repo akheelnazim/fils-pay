@@ -1,0 +1,13 @@
+.git
+node_modules
+**/node_modules
+**/dist
+.env
+.env.*
+**/.env
+**/.env.*
+data
+
+# macOS AppleDouble metadata is not application source.
+._*
+**/._*

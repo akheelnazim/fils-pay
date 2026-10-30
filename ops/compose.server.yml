@@ -1,0 +1,131 @@
+services:
+  migrate:
+    image: filspay-node:local
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.node
+    command: ["npm", "run", "migrate"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: "no"
+
+  api:
+    image: filspay-node:local
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.node
+    command: ["node", "node_modules/tsx/dist/cli.mjs", "apps/api/src/index.ts"]
+    environment:
+      NODE_ENV: production
+      OTP_DEV_EXPOSE: ${OTP_DEV_EXPOSE:-false}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      SETTLEMENT_INTERNAL_URL: http://settlement:8091
+      SETTLEMENT_INTERNAL_TOKEN: ${SETTLEMENT_INTERNAL_TOKEN:?Set SETTLEMENT_INTERNAL_TOKEN}
+      WEBHOOK_SECRET_ENCRYPTION_KEY: ${WEBHOOK_SECRET_ENCRYPTION_KEY:?Set WEBHOOK_SECRET_ENCRYPTION_KEY}
+      ACQUIRER_CALLBACK_SIGNING_SECRET: ${ACQUIRER_CALLBACK_SIGNING_SECRET:?Set ACQUIRER_CALLBACK_SIGNING_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS}
+      CHECKOUT_BASE_URL: ${CHECKOUT_BASE_URL:?Set CHECKOUT_BASE_URL}
+      KYC_UPLOAD_DIR: /data/kyc
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - kyc_data:/data/kyc
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  merchant:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.ui
+      target: merchant
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?Set VITE_API_BASE_URL}
+        VITE_ADMIN_API_BASE_URL: ${VITE_API_BASE_URL:?Set VITE_API_BASE_URL}
+        VITE_WEB_BASE_URL: ${CHECKOUT_BASE_URL:?Set CHECKOUT_BASE_URL}
+    ports:
+      - "127.0.0.1:5173:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  admin:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.ui
+      target: admin
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?Set VITE_API_BASE_URL}
+        VITE_ADMIN_API_BASE_URL: ${VITE_API_BASE_URL:?Set VITE_API_BASE_URL}
+        VITE_WEB_BASE_URL: ${CHECKOUT_BASE_URL:?Set CHECKOUT_BASE_URL}
+    ports:
+      - "127.0.0.1:5174:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  settlement:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.go
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      SETTLEMENT_INTERNAL_TOKEN: ${SETTLEMENT_INTERNAL_TOKEN:?Set SETTLEMENT_INTERNAL_TOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  reporting:
+    image: filspay-node:local
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile.node
+    command: ["node", "node_modules/tsx/dist/cli.mjs", "apps/reporting/src/index.ts"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MERCHANT_DOMAIN: ${MERCHANT_DOMAIN:?Set MERCHANT_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?Set ADMIN_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
+  kyc_data:

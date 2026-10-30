@@ -1,0 +1,38 @@
+# Local smoke test only. Run alongside compose.server.yml with a separate project name.
+services:
+  proxy:
+    profiles: ["https"]
+
+  local-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: filspay
+      POSTGRES_PASSWORD: local_test_only
+      POSTGRES_DB: filspay
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filspay -d filspay"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - local_db_data:/var/lib/postgresql/data
+
+  migrate:
+    depends_on:
+      local-db:
+        condition: service_healthy
+
+  api:
+    ports: !override
+      - "127.0.0.1:13000:3000"
+
+  merchant:
+    ports: !override
+      - "127.0.0.1:15173:80"
+
+  admin:
+    ports: !override
+      - "127.0.0.1:15174:80"
+
+volumes:
+  local_db_data:
