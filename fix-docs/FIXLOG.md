@@ -70,7 +70,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | --- | --- | --- | --- | --- |
 | X1 | `expire_holds.ts` can delete every hold | `scripts/expire_holds.ts` | fixed | `fix(X1)` |
 | X2 | March sweep script not idempotent | `scripts/reconcile_march.ts` | fixed | `fix(X2)` |
-| X3 | Large export can OOM the API | open | |
+| X3 | Large export can OOM the API | `apps/api/src/routes/transactions.ts` | fixed | `fix(X3)` |
 | X4 | Credit threshold can be split around | open | |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
@@ -418,6 +418,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: each extra run takes the March residue (70 fils across 13 lines in production) out of merchant payables again, doubling finance's gap; production has likely been posted at least twice.
 - Fix: the sweep is `runSweep(client, { dryRun })` inside the caller's transaction. `--dry-run` computes and reports, writes nothing. A real run takes an advisory lock on the sweep's description, then refuses ("REFUSED", exit 1) if any ledger entry with that description exists. Window left on the UTC month (ADR-0003); the posting direction is X5. RUNBOOK's claim is now true; its copy-for-next-month step now also says to rename `SWEEP_DESCRIPTION` and dry-run first. The test hides any committed sweep rows inside its own transaction, so it also runs on a DB where March was posted. · Proper fix (if different): a unique key on the sweep (e.g. a `ledger_postings` row per sweep + month) instead of a description match, and month-end residue automated (RUNBOOK). Production clean-up: count `ledger_entries WHERE description LIKE 'March 2026 scheme rounding residue%'` (2 legs per merchant per run) and reverse the extra runs with finance; not done here (never run scripts against data).
 - Test: `scripts/reconcile_march.fix.test.ts` (first run posts once, second run posts nothing, `--dry-run` writes nothing, dry run after a real run writes nothing, round merchant untouched; rolled back; three failed before: second run and dry runs posted) · ADR: 0003 (window unchanged)
+
+#### X3 Large export can run the API out of memory
+- Where: `apps/api/src/routes/transactions.ts`
+- What's wrong: `GET /v1/transactions/export` built the whole CSV in memory; `from`/`to` are optional, so one call could export a merchant's entire history.
+- Why: the route used `buildTransactionsExportCsv` (all rows, one string). The paged `streamTransactionsExportCsv` existed but was unused (CHANGELOG 1.8.0 claims the export streams), and its own cursor (`occurred_at >` a JS Date) skipped rows sharing a timestamp at a page boundary (1000 of 1002 exported) and repeated rows that differ below the millisecond.
+- What it breaks: a large merchant's full export can exhaust the 512 MB API and take it down for every merchant.
+- Fix: `streamTransactionsExportCsv` is an async generator paging 1000 rows by `(occurred_at, id)` with the timestamp as exact text; the route sends it with `Readable.from` (backpressure, one page in memory). The body is the same as before (rows sharing an instant now come in id order). CHANGELOG 1.8.0's streaming claim is now true. A database error mid-export now ends a 200 response early (headers already sent). `buildTransactionsExportCsv` is left for its tests but no longer used by the route. · Proper fix (if different): also require and cap the date range (the audit's other option), which changes the API for callers that omit `from`/`to`.
+- Test: `transactions/exportCsv.fix.test.ts` (1002 rows at one instant, sub-millisecond rows at a boundary, same rows as the in-memory export, empty export, the route streams with no content-length; the route test failed before with content-length 108600) · ADR: none
 
 #### X8 Reporting crashes on its own lag check
 - Where: `apps/reporting/src/consumer/applyEvent.ts`
