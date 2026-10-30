@@ -70,13 +70,14 @@ function groupByMerchant(rows: ResidueRow[]): MerchantResidue[] {
 
 const SWEEP_DESCRIPTION = "March 2026 scheme rounding residue sweep — manual recon per finance";
 
+// X5: residue legs per ADR-0002; merchants are paid in full, never debited.
 async function postResidueCorrection(client: Client, merchant: MerchantResidue, now: Date): Promise<void> {
   if (merchant.residueFils <= 0) return;
   const entryGroupId = randomUUID();
   await client.query(
     `INSERT INTO ledger_entries (entry_group_id, merchant_id, account_id, direction, amount_fils, occurred_at, description)
-     VALUES ($1, $2, 'merchant_payable', 'debit', $3, $4, $5),
-            ($1, $2, 'scheme_rounding_residue', 'credit', $3, $4, $5)`,
+     VALUES ($1, $2, 'card_scheme_clearing', 'credit', $3, $4, $5),
+            ($1, $2, 'scheme_rounding_residue', 'debit', $3, $4, $5)`,
     [entryGroupId, merchant.merchantId, merchant.residueFils, now.toISOString(), SWEEP_DESCRIPTION],
   );
 }

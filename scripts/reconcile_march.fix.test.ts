@@ -58,11 +58,11 @@ async function inRolledBackTx(body: (client: Client, merchantId: string) => Prom
   }
 }
 
-/** Residue debited from this merchant's payable by the sweep, in fils. */
+/** Residue the sweep booked for this merchant (scheme_rounding_residue debit, ADR-0002), in fils. */
 async function sweptFor(client: Client, merchantId: string): Promise<number> {
   const r = await client.query<{ total: string }>(
     `SELECT COALESCE(SUM(amount_fils), 0)::text AS total FROM ledger_entries
-      WHERE merchant_id = $1 AND account_id = 'merchant_payable' AND direction = 'debit'
+      WHERE merchant_id = $1 AND account_id = 'scheme_rounding_residue' AND direction = 'debit'
         AND description LIKE $2`,
     [merchantId, SWEEP_LIKE],
   );

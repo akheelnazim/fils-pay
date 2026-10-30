@@ -72,7 +72,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X2 | March sweep script not idempotent | `scripts/reconcile_march.ts` | fixed | `fix(X2)` |
 | X3 | Large export can OOM the API | `apps/api/src/routes/transactions.ts` | fixed | `fix(X3)` |
 | X4 | Credit threshold can be split around | open | |
-| X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
+| X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | `scripts/reconcile_march.ts` | fixed | `fix(X5)` |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
 | X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `fix(X8)` |
 
@@ -482,6 +482,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: a large merchant's full export can exhaust the 512 MB API and take it down for every merchant.
 - Fix: `streamTransactionsExportCsv` is an async generator paging 1000 rows by `(occurred_at, id)` with the timestamp as exact text; the route sends it with `Readable.from` (backpressure, one page in memory). The body is the same as before (rows sharing an instant now come in id order). CHANGELOG 1.8.0's streaming claim is now true. A database error mid-export now ends a 200 response early (headers already sent). `buildTransactionsExportCsv` is left for its tests but no longer used by the route. · Proper fix (if different): also require and cap the date range (the audit's other option), which changes the API for callers that omit `from`/`to`.
 - Test: `transactions/exportCsv.fix.test.ts` (1002 rows at one instant, sub-millisecond rows at a boundary, same rows as the in-memory export, empty export, the route streams with no content-length; the route test failed before with content-length 108600) · ADR: none
+
+#### X5 March sweep charges merchants the scheme residue
+- Where: `scripts/reconcile_march.ts`
+- What's wrong: the March residue sweep debited `merchant_payable` and credited `scheme_rounding_residue`, so merchants paid for the scheme's 2-decimal truncation.
+- Why: the legs were the reverse of ADR-0002, which books residue as credit `card_scheme_clearing` / debit `scheme_rounding_residue` and never touches the merchant.
+- What it breaks: each merchant's March payable was cut by its residue (70 fils across 13 lines in production, twice per X2), and the residue account moved the wrong way, so finance's monthly clearing against the scheme statement can't tie out.
+- Fix: the sweep posts credit `card_scheme_clearing` / debit `scheme_rounding_residue` (same amounts, still one group per merchant). X2's test helper now reads the residue debit instead of the merchant debit. · Proper fix (if different): with finance, reverse the production postings already made (each run's merchant_payable debit and residue credit) and post the ADR-0002 legs once; not done here (never run scripts against data). Residue for April onward is M14.
+- Test: `scripts/reconcile_march.x5.fix.test.ts` (no merchant_payable leg; legs are clearing credit / residue debit of 9 fils; both failed before; rolled back) · ADR: 0002
 
 #### X8 Reporting crashes on its own lag check
 - Where: `apps/reporting/src/consumer/applyEvent.ts`
