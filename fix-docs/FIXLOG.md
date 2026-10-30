@@ -59,7 +59,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | Daily close runs 03:00 Bahrain, not midnight | open | |
+| T1 | Daily close runs 03:00 Bahrain, not midnight | `apps/settlement/internal/scheduler/daemon.go` | fixed | `fix(T1)` |
 | T2 | Admin tool flips test merchants into settlement | open | |
 
 ### Scripts and other (X)
@@ -318,6 +318,15 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `ledger/refresh_fix_test.go` (net not gross, paid and open excluded, all-paid = 0, recalculated fee, two batches with no cache row; five failed before) · ADR: 0004, 0006 unchanged
 
 ### Settlement timing and test merchants (T)
+
+#### T1 Daily close runs at 03:00 Bahrain, not midnight
+- Where: `apps/settlement/internal/scheduler/daemon.go`
+- What's wrong: the daemon closed each business day at about 03:15 Bahrain instead of 00:15 (midnight + `DaemonRunDelayMinutes`).
+- Why: `runIfDue` passed `time.Now().UTC()` to `BusinessDayWindow`, which takes the calendar date in the argument's own zone. From 00:00 to 03:00 Bahrain the UTC date is still yesterday, so it re-targeted the day before yesterday (already closed).
+- What it breaks: every daily close and payout runs three hours late; anything scheduled after "midnight close" (finance checks, scheme files) sees the previous day still open.
+- Fix: pull the due decision into `dueBusinessDate(now, delay)` and convert `now` with new `settlement.InBusinessDayZone` before `BusinessDayWindow`. Removed the false "UTC here is fine" comments. · Proper fix (if different): convert inside `BusinessDayWindow` (`date.In(businessDayLocation).Date()`); it would break `window_utc_compat_test.go`, which locks today's behaviour, and change the CLI/API callers that pass a parsed date, so it is left for later.
+- Note: `DaemonRunDelayMinutes` has no range check (config.go); 1440 or more means the close is never due. Separate hardening, not T1.
+- Test: `scheduler/daemon_fix_test.go` (00:10 not due, 00:15/00:20 due, delay 0, 02:59, 03:15, 23:59, year end; the 00:00–03:00 cases failed before) · ADR: none
 
 ### Scripts and other (X)
 
