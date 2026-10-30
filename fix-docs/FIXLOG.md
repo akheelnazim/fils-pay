@@ -75,7 +75,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | `scripts/reconcile_march.ts` | fixed | `fix(X5)` |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | `apps/reporting/src/consumer/runConsumerPass.ts` | fixed | `fix(X6)` |
 | X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `fix(X8)` |
-| X9 | Reconciliation page crashes when the calculated gap is negative | `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx` | open | |
+| X9 | Reconciliation page crashes when the calculated gap is negative | `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx` | fixed | `fix(X9)` |
 | X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html` | open | |
 
 ### Deploy and setup (D)
@@ -541,8 +541,8 @@ Keep each entry short. One per bug, under its class heading:
 - What's wrong: the reconciliation report renders `gapFils` through `bhd()`, which calls `toFils()` with negative values disabled.
 - Why: a negative reconciliation difference is valid, but the shared display helper only accepts nonnegative amounts.
 - What it breaks: loading a report with a negative gap throws during render, so the merchant cannot view the reconciliation report.
-- Fix: add a signed-fils display helper or allow negative values for this display path; keep positive-only validation for inputs that represent amounts owed/charged.
-- Test: pending · ADR: 0001
+- Fix: allow signed fils in the display-only formatter; input validation still rejects negative payable amounts.
+- Test: `apps/web/src/format.x9.fix.test.ts` (negative one fil and negative 1,234 fils); failed before with RangeError · ADR: 0001 · Commit: `fix(X9)`
 
 #### X10 Merchant dashboard has checkout page title
 - Where: `apps/web/index.html`
