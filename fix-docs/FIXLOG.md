@@ -47,7 +47,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M5 | Lifetime payout estimate drifts (REAL) | open | |
 | M6 | Platform volume counter overflows int32 | `apps/settlement/internal/settlement/platform_volume.go` | fixed | `fix(M6)` |
 | M7 | Dashboard fee 245 vs charged 225 bps | `apps/api/src/fees/currentFeeScheduleDisplay.ts` | fixed | `fix(M7)` |
-| M8 | MDR recalculation rewrites paid batches | open | |
+| M8 | MDR recalculation rewrites paid batches | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `fix(M8)` |
 | M9 | Recalculate balances button 135K → 7K (FP-203) | `apps/settlement/internal/ledger/refresh.go` | fixed | `fix(M9)` |
 | M10 | Settlement summary double-counts multi-capture | open | |
 | M11 | Reconciliation pending uses `merchants.mdr_bps` | open | |
@@ -361,6 +361,15 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: staff quote merchants the wrong rate (a March correction keyed in August showed 245 while 225 is charged); future-dated rates showed early; on a same-day tie settlement could pick the older entry.
 - Fix: display uses billing's rule; Go orders `effective_from ASC, created_at ASC` so its "last applicable" matches billing. Updated the test that asserted the backfilled row wins.
 - Test: `fees/currentFeeScheduleDisplay.fix.test.ts` (backdated, future-dated, same-day tie, only-future → none; display = billing) and `settlement/fee_schedule_fix_test.go` (tie) · ADR: none
+
+#### M8 MDR recalculation rewrites paid batches
+- Where: `apps/settlement/internal/settlement/recalculate_mdr.go`
+- Clue: "MDR recalculation changed batches that were already paid out. Those should never change."
+- What's wrong: finance's "Recalculate MDR" rewrote the fee and net payout of batches that had already been paid.
+- Why: `RecalculateMDR` selects `status <> 'open'`, which includes `paid`, and then updated every batch's `fee_fils`/`net_payout_fils` and moved the payable cache by the difference, whatever the batch's status. Its own docstring says paid figures stay as they were paid.
+- What it breaks: after a rate rise from 250 to 300 bps, a paid batch's record changed from 177 fee / 6905 net to 212 / 6870 (no longer what the bank paid), and the merchant's cached payable dropped 35 fils for money that was no longer in it.
+- Fix: for a `paid` batch, skip the batch UPDATE and the cache delta. The ledger adjustment and the result row are still posted, so finance sees and books the difference; since the paid fee no longer moves, the pass first counts the MDR adjustments already posted on that batch after `paid_at` (review: without this every re-run posted the difference again). Limit: a `paid` row with `paid_at` NULL books 0 and still re-posts; both payout paths set `paid_at`. Closed (unpaid) batches are updated as before. Removed the false comments in `balances/cache.go` and `routes/admin.ts` ("only touches open batches"). · Proper fix (if different): post a paid batch's adjustment into the merchant's next payout batch so the difference is actually collected or refunded (today it sits on the old batch id and only the ledger carries it). The recalculation also ignores `fee_schedules` and the volume tier, using only `merchants.mdr_bps`.
+- Test: `settlement/recalculate_mdr_fix_test.go` (paid batch figures and cache unchanged, failed before: fee 177→212, cache 6905→6870; paid batch still journaled; closed batch still updated; re-run posts nothing, failed before: 70 booked instead of 35; a second rate change posts only the gap; closed-then-paid not double-counted) · ADR: none
 
 #### M9 Rebuild cached balances gives the wrong figure (FP-203)
 - Where: `apps/settlement/internal/ledger/refresh.go`

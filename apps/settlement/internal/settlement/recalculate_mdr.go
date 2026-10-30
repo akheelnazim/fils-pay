@@ -96,31 +96,44 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		if err != nil {
 			return RecalcResult{}, err
 		}
-		diff := newFee - b.feeFils
+		oldFee := b.feeFils
+		if b.status == "paid" {
+			// M8: a paid batch's fee_fils is never rewritten, so count what
+			// earlier passes already booked against it, or a re-run posts again.
+			booked, err := paidBatchBookedAdjustment(ctx, tx, b.id)
+			if err != nil {
+				return RecalcResult{}, err
+			}
+			oldFee += booked
+		}
+		diff := newFee - oldFee
 		if diff == 0 {
 			continue
 		}
 		newNetPayout := b.grossFils - newFee
-		// am: posts against the OLD batch id so it never lands in a new payout?? fixed in FP-244 i think
 		if err := postMdrAdjustment(ctx, tx, merchantID, b.id, diff); err != nil {
 			return RecalcResult{}, err
 		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE settlement_batches SET fee_fils = $2, net_payout_fils = $3 WHERE id = $1
-		`, b.id, int64(newFee), int64(newNetPayout)); err != nil {
-			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: update batch %s: %w", b.id, err)
-		}
-		// A fee increase (diff > 0) reduces net payout owed, so the cache
-		// moves by -diff — the same signed-delta idiom ApplyBatchClose
-		// already exposes for a batch close's own net payout.
-		if err := balances.ApplyBatchClose(ctx, tx, merchantID, b.id, -diff); err != nil {
-			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: apply cache delta for %s: %w", b.id, err)
+		// M8: a paid batch's figures are what was actually paid out and are no
+		// longer in the payable cache, so only the ledger adjustment is posted.
+		if b.status != "paid" {
+			if _, err := tx.Exec(ctx, `
+				UPDATE settlement_batches SET fee_fils = $2, net_payout_fils = $3 WHERE id = $1
+			`, b.id, int64(newFee), int64(newNetPayout)); err != nil {
+				return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: update batch %s: %w", b.id, err)
+			}
+			// A fee increase (diff > 0) reduces net payout owed, so the cache
+			// moves by -diff — the same signed-delta idiom ApplyBatchClose
+			// already exposes for a batch close's own net payout.
+			if err := balances.ApplyBatchClose(ctx, tx, merchantID, b.id, -diff); err != nil {
+				return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: apply cache delta for %s: %w", b.id, err)
+			}
 		}
 		adjusted = append(adjusted, BatchAdjustment{
 			BatchID:    b.id,
 			BatchDate:  b.batchDate,
 			Status:     b.status,
-			OldFeeFils: b.feeFils,
+			OldFeeFils: oldFee,
 			NewFeeFils: newFee,
 			DiffFils:   diff,
 		})
@@ -160,6 +173,27 @@ func recomputeBatchFee(ctx context.Context, tx pgx.Tx, batchID uuid.UUID, mdrBps
 		return 0, fmt.Errorf("settlement: RecalculateMDR: iterate batch events for %s: %w", batchID, err)
 	}
 	return fee, nil
+}
+
+// paidBatchBookedAdjustment returns the fee change already booked on a paid
+// batch by MDR adjustments posted after it was paid (fee revenue credits minus
+// debits). Adjustments posted while it was still closed are already in its
+// fee_fils, so they are not counted.
+func paidBatchBookedAdjustment(ctx context.Context, tx pgx.Tx, batchID uuid.UUID) (money.Fils, error) {
+	var booked int64
+	err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN le.direction = 'credit' THEN le.amount_fils ELSE -le.amount_fils END), 0)
+		  FROM ledger_entries le
+		  JOIN settlement_batches sb ON sb.id = le.settlement_batch_id
+		 WHERE le.settlement_batch_id = $1
+		   AND le.account_id = 'platform_fee_revenue'
+		   AND le.description = 'MDR recalculation adjustment'
+		   AND le.occurred_at >= sb.paid_at
+	`, batchID).Scan(&booked)
+	if err != nil {
+		return 0, fmt.Errorf("settlement: RecalculateMDR: booked adjustments for %s: %w", batchID, err)
+	}
+	return money.Fils(booked), nil
 }
 
 // postMdrAdjustment posts the two-leg, entry_group_id-balanced pair for one
