@@ -14,6 +14,8 @@ import (
 
 // RefreshBalanceCache recomputes each merchant's cached balance from the
 // settled position and overwrites merchant_balances in one transaction.
+// The settled position is the net payout of batches closed but not yet paid:
+// the same figure ApplyBatchClose adds and ApplyPayout takes away (ADR-0004).
 func RefreshBalanceCache(ctx context.Context, db *pgxpool.Pool) (map[uuid.UUID]RebuildDiff, error) {
 	tx, err := db.Begin(ctx)
 	if err != nil {
@@ -23,7 +25,7 @@ func RefreshBalanceCache(ctx context.Context, db *pgxpool.Pool) (map[uuid.UUID]R
 
 	rows, err := tx.Query(ctx, `
 		SELECT DISTINCT merchant_id FROM (
-			SELECT merchant_id FROM merchant_payable_position
+			SELECT merchant_id FROM settlement_batches WHERE status = 'closed'
 			UNION
 			SELECT merchant_id FROM merchant_balances
 		) merchants
@@ -59,9 +61,11 @@ func RefreshBalanceCache(ctx context.Context, db *pgxpool.Pool) (map[uuid.UUID]R
 
 		var rebuilt int64
 		err = tx.QueryRow(ctx, `
-			SELECT COALESCE(payable_fils, 0) FROM merchant_payable_position WHERE merchant_id = $1
+			SELECT COALESCE(SUM(net_payout_fils), 0)
+			  FROM settlement_batches
+			 WHERE merchant_id = $1 AND status = 'closed'
 		`, merchantID).Scan(&rebuilt)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if err != nil {
 			return nil, fmt.Errorf("ledger: RefreshBalanceCache: recompute balance for %s: %w", merchantID, err)
 		}
 

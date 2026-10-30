@@ -254,8 +254,8 @@ func TestRebuildBalances_ValidToken(t *testing.T) {
 		t.Fatalf("seed drifted cache: %v", err)
 	}
 
-	// The rebuild endpoint's source of record is a closed batch's own
-	// scheme-export line, independent of the ledger legs inserted above.
+	// The rebuild endpoint's source of record is the closed batch's net
+	// payout (M9), independent of the ledger legs inserted above.
 	var batchID uuid.UUID
 	err = pool.QueryRow(context.Background(), `
 		INSERT INTO settlement_batches (merchant_id, batch_date, status, gross_fils, fee_fils, net_payout_fils, closed_at)
@@ -291,8 +291,8 @@ func TestRebuildBalances_ValidToken(t *testing.T) {
 	if diff.Before != 999999 {
 		t.Errorf("before = %d, want 999999 (the drifted cached value)", diff.Before)
 	}
-	if diff.After != 12000 {
-		t.Errorf("after = %d, want 12000 (the scheme-export-derived total)", diff.After)
+	if diff.After != 11700 {
+		t.Errorf("after = %d, want 11700 (the closed batch's net payout, M9)", diff.After)
 	}
 	if !diff.Changed {
 		t.Error("changed = false, want true")
@@ -303,8 +303,8 @@ func TestRebuildBalances_ValidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query persisted balance: %v", err)
 	}
-	if persisted != 12000 {
-		t.Errorf("persisted cached_payable_fils = %d, want 12000", persisted)
+	if persisted != 11700 {
+		t.Errorf("persisted cached_payable_fils = %d, want 11700", persisted)
 	}
 }
 

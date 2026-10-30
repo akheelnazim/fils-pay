@@ -47,7 +47,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M6 | Platform volume counter overflows int32 | open | |
 | M7 | Dashboard fee 245 vs charged 225 bps | `apps/api/src/fees/currentFeeScheduleDisplay.ts` | fixed | `fix(M7)` |
 | M8 | MDR recalculation rewrites paid batches | open | |
-| M9 | Recalculate balances button 135K → 7K (FP-203) | open | |
+| M9 | Recalculate balances button 135K → 7K (FP-203) | `apps/settlement/internal/ledger/refresh.go` | fixed | `fix(M9)` |
 | M10 | Settlement summary double-counts multi-capture | open | |
 | M11 | Reconciliation pending uses `merchants.mdr_bps` | open | |
 | M12 | `parsePromotionalDiscountFils` uses float × 100 | open | |
@@ -137,6 +137,8 @@ Corrections:
   X2 fix = idempotency guard + dry run only; don't change the window.
 - ADR-0004 (console button rebuilds from settled data, not the ledger): the audit's M9 swap to
   the ledger is **rejected** (code follows the ADR). Fix the settled-data path instead.
+  Done: `RefreshBalanceCache` now reads closed-batch net payouts, so nothing reads
+  `merchant_payable_position` any more; D1 may drop it instead of moving it.
 - ADR-0005 (migrations 0054–0056 reserved for settlement v2, never reuse): 0054, 0055, 0056 in
   this repo break it. Move them to 0073+: keep `merchant_payable_position` (M9 reads it) and
   `v_active_api_keys`, drop `v_unbatched_capture_events`, fix or drop 0055, keep `revoke_after`.
@@ -305,6 +307,15 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: staff quote merchants the wrong rate (a March correction keyed in August showed 245 while 225 is charged); future-dated rates showed early; on a same-day tie settlement could pick the older entry.
 - Fix: display uses billing's rule; Go orders `effective_from ASC, created_at ASC` so its "last applicable" matches billing. Updated the test that asserted the backfilled row wins.
 - Test: `fees/currentFeeScheduleDisplay.fix.test.ts` (backdated, future-dated, same-day tie, only-future → none; display = billing) and `settlement/fee_schedule_fix_test.go` (tie) · ADR: none
+
+#### M9 Rebuild cached balances gives the wrong figure (FP-203)
+- Where: `apps/settlement/internal/ledger/refresh.go`
+- Clue: "I pressed it last Thursday and Alpha Retail's balance went from 135K to 7K. Yousif had to run the CLI rebuild to fix it."
+- What's wrong: the console's "Rebuild cached balances" overwrote every merchant's cached balance with an unrelated number.
+- Why: `RefreshBalanceCache` read view `merchant_payable_position` (0054), which sums **gross** scheme export lines over **every** batch, paid ones included. The cache it rebuilds is the net of batches closed but not yet paid (`ApplyBatchClose` adds net, `ApplyPayout` subtracts it), so fees, payouts and Recalculate MDR were all ignored. History without export lines (as in production) undercounts the same way the clue shows.
+- What it breaks: a closed 100.000 BD batch with a 2.250 BD fee showed 100.000 BD payable instead of 97.750; an already-paid batch kept showing as owed. Support then "fixed" balances with Adjust (FP-203), which the next rebuild wiped.
+- Fix: rebuild from `SUM(net_payout_fils)` of `settlement_batches` with `status = 'closed'`, still settled data as ADR-0004 requires (the audit's swap to the ledger walk is rejected by the ADR). Updated `internalapi/server_test.go`, which asserted the gross 12000 instead of the net 11700. The 0054 view is now unused. · Proper fix (if different): same; the incremental cache's own drift (paid batches in Recalculate MDR, split payouts) is M8/M3/M15.
+- Test: `ledger/refresh_fix_test.go` (net not gross, paid and open excluded, all-paid = 0, recalculated fee, two batches with no cache row; five failed before) · ADR: 0004, 0006 unchanged
 
 ### Settlement timing and test merchants (T)
 
