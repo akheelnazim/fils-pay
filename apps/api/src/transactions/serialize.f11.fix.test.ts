@@ -21,6 +21,7 @@ test("F11: serializeTransaction maps refunded_fils (string or number) to refunde
     status: "partially_refunded",
     amount_fils: "10000",
     captured_fils: "10000",
+    pending_refund_fils: "0",
     currency: "BHD",
     reference: null,
     acquirer_reference: "acq",

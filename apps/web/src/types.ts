@@ -91,6 +91,7 @@ export interface TransactionDto {
   amountFils: number;
   capturedFils: number;
   refundedFils: number;
+  pendingRefundFils: number;
   currency: string;
   reference: string | null;
   acquirerReference: string;

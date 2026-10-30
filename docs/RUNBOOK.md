@@ -101,6 +101,23 @@ Agree any correction with Finance before changing a stored value. On seeded
 demo data every merchant with paid batches will show drift, because the seed
 sets the estimate but writes no payout legs.
 
+## A refund is stuck pending
+
+A refund is written as `pending` before the acquirer is called and becomes
+`succeeded` or `failed` when it answers (F22). A `pending` row older than a few
+minutes means the process stopped in between. Find them (read-only):
+
+```sql
+SELECT r.id, r.transaction_id, r.merchant_id, r.amount_fils, r.created_at,
+       t.refunded_fils, t.pending_refund_fils
+  FROM refunds r JOIN transactions t ON t.id = r.transaction_id
+ WHERE r.status = 'pending' AND r.created_at < now() - interval '10 minutes';
+```
+
+Its amount is still reserved, so it can't be refunded twice. Confirm the
+outcome at the acquirer with Finance before any correction: an approved refund
+needs its ledger legs, a refused one needs the reservation released.
+
 ## A merchant's balance looks wrong
 
 `merchant_balances` is a cache. Recompute it:

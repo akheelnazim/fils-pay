@@ -90,12 +90,12 @@ export function RefundDrawer({ txn, onRefunded }: RefundDrawerProps) {
                 type="number"
                 min={1}
                 step={1}
-                max={txn.capturedFils - txn.refundedFils}
+                max={txn.capturedFils - txn.refundedFils - txn.pendingRefundFils}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />
             </label>
-            <p className="dash-muted">Still refundable: {bhd(txn.capturedFils - txn.refundedFils)}</p>
+            <p className="dash-muted">Still refundable: {bhd(txn.capturedFils - txn.refundedFils - txn.pendingRefundFils)}</p>
             <button type="submit" className="dash-button" disabled={submitting}>
               {submitting ? "Refunding..." : "Refund"}
             </button>

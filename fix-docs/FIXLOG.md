@@ -126,6 +126,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F19 | Status recompute counts in-flight refunds as refunded | `apps/api/src/admin/transactionStatusRecompute.ts` | fixed | `feat(FP-300/F19)` |
 | F20 | Fee recalculation re-rates money already refunded | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `feat(FP-300/F20)` |
 | F21 | Reconciliation shows a gap when a later day's batch takes a refund | `apps/api/src/settlement/query.ts` | fixed | `feat(FP-300/F21)` |
+| F22 | A refund waiting on the acquirer had no row; pending money was indistinguishable from refunded | `apps/api/src/payments/processRefund.ts`, `db/migrations/0084_refunds_pending.sql` | fixed | `feat(FP-300/F22)` |
 
 ### Test suite (Q)
 
@@ -735,6 +736,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it covers: authorize 10 000 fils → capture → `POST /v1/refunds` of 3 000 → a blank-amount refund of the remaining 7 000 → a third refund answers 409. Checks: every ledger entry group balances; `merchant_payable` and `platform_fee_revenue` both net to 0 for the payment; refunds sum to 10 000 and the fee reversed to 250 (the whole fee); the transaction is `refunded` with `refundedFils 10 000`; two `refund.succeeded` outbox rows, delivered to the merchant's endpoint with signatures that verify (`partially_refunded` then `refunded`, totals 3 000 and 10 000); the reconciliation report has gap 0.
 - Payout reduction is the Go side (F8, `settlement/refund_fix_test.go`): a TS test can't run `CloseBatch`.
 - Test result: passes on first complete run against the fixed code · ADR: none
+
+#### F22 Pending refunds are visible (F3's proper fix)
+- Where: `apps/api/src/payments/processRefund.ts`, `db/migrations/0084_refunds_pending.sql`, `transactions/serialize.ts`, `apps/web` (types, RefundDrawer)
+- What's wrong: a refund waiting on the acquirer existed only as an amount added to `transactions.refunded_fils`. Nothing said which refund it was; a crash between the reservation and the journal left money reserved with no trace; the API's `refundedFils` mixed money gone back with money still pending.
+- Why: step 1 reserved the amount but wrote the refund row only on success (step 3).
+- What it breaks: stuck reservations nobody can find; dashboards and integrations shown refunds that may still be declined.
+- Fix: migration 0084 allows `refunds.status = 'pending'` and adds `transactions.pending_refund_fils`. Step 1 writes the refund as `pending` and adds to both counters; step 3 turns it into `succeeded` (fee reversed, acquirer reference, `occurred_at` = approval time) or `failed`, and subtracts it from `pending_refund_fils` (a failure also releases `refunded_fils`, as F3 did). `refunded_fils` still counts pending + succeeded, so F3's validation is unchanged; every other reader (F5, F8, F9, F10/F21, F15, F17, F19) already filters `status = 'succeeded'`. The API now returns `refundedFils` = succeeded only and a new `pendingRefundFils`; the drawer's limit is captured − refunded − pending. Two tests in `processRefund.test.ts` counted every refund row after a decline/error; a failed row is now expected, so they count succeeded rows. RUNBOOK: how to find a stuck pending refund. · Proper fix (if different): an automatic sweeper for stale pending rows once the acquirer has a refund lookup.
+- Test: `payments/processRefund.f22.fix.test.ts` (while the acquirer is answering: a pending row, `pendingRefundFils` 4 000, `refundedFils` 0; then succeeded with fee 100; decline and error leave a failed row and nothing pending; pending money can't be refunded twice). 3 failed before · ADR: 0001
 
 #### F21 Reconciliation gap when a refund rolls to a later batch (F10's known limit)
 - Where: `apps/api/src/settlement/query.ts`

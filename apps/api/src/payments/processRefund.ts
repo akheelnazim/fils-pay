@@ -137,15 +137,39 @@ export async function processRefund(
     // F3: reserve the amount before calling the acquirer, under the lock, so
     // no other refund can validate against the old total. Released in step 3
     // if the acquirer declines or errors.
-    await client.query(`UPDATE transactions SET refunded_fils = refunded_fils + $2 WHERE id = $1`, [
-      txn.id,
-      validation.amountFils,
-    ]);
+    // F22: pending_refund_fils says how much of that reservation is still
+    // waiting on the acquirer.
+    await client.query(
+      `UPDATE transactions
+          SET refunded_fils = refunded_fils + $2, pending_refund_fils = pending_refund_fils + $2
+        WHERE id = $1`,
+      [txn.id, validation.amountFils],
+    );
+    // F22: the refund exists from here on, as 'pending', so a crash before
+    // step 3 leaves a visible row instead of an anonymous reservation.
+    const pendingRow = await client.query<{ id: string }>(
+      `INSERT INTO refunds
+         (transaction_id, merchant_id, amount_fils, fee_reversed_fils, status,
+          acquirer_reference, reason, created_by_type, created_by_id)
+       VALUES ($1, $2, $3, 0, 'pending', $4, $5, $6, $7)
+       RETURNING id`,
+      [
+        txn.id,
+        txn.merchant_id,
+        validation.amountFils,
+        txn.acquirer_reference,
+        // F14: an explicit NULL bypasses the column default and fails 0070's CHECK.
+        input.reason ?? "unspecified",
+        input.actor.type,
+        input.actor.id,
+      ],
+    );
 
     return {
       kind: "proceed" as const,
       claimId: claim.row.id,
       attemptCount: claim.row.attemptCount,
+      refundId: pendingRow.rows[0]!.id,
       transactionId: txn.id,
       merchantId: txn.merchant_id,
       acquirerReference: txn.acquirer_reference,
@@ -198,11 +222,14 @@ export async function processRefund(
     };
 
     if (acquirerResult.outcome !== "approved") {
-      // F3: release the reservation made in step 1.
-      await client.query(`UPDATE transactions SET refunded_fils = refunded_fils - $2 WHERE id = $1`, [
-        prepared.transactionId,
-        prepared.requestedAmount,
-      ]);
+      // F3: release the reservation made in step 1; F22: the refund failed.
+      await client.query(
+        `UPDATE transactions
+            SET refunded_fils = refunded_fils - $2, pending_refund_fils = pending_refund_fils - $2
+          WHERE id = $1`,
+        [prepared.transactionId, prepared.requestedAmount],
+      );
+      await client.query(`UPDATE refunds SET status = 'failed' WHERE id = $1`, [prepared.refundId]);
       await setStatus(await current());
     }
     if (acquirerResult.outcome === "declined") {
@@ -246,27 +273,22 @@ export async function processRefund(
           ? feeLeftFils
           : share;
 
+    // F22: the pending row from step 1 becomes the succeeded refund; it
+    // happened now, when the acquirer approved it.
     const refundResult = await client.query<{ id: string; occurred_at: Date }>(
-      `INSERT INTO refunds
-         (transaction_id, merchant_id, amount_fils, fee_reversed_fils, status,
-          acquirer_reference, reason, created_by_type, created_by_id)
-       VALUES ($1, $2, $3, $4, 'succeeded', $5, $6, $7, $8)
-       RETURNING id, occurred_at`,
-      [
-        prepared.transactionId,
-        prepared.merchantId,
-        prepared.requestedAmount,
-        feeReversedFils,
-        acquirerResult.acquirerReference,
-        // F14: an explicit NULL bypasses the column default and fails 0070's CHECK.
-        input.reason ?? "unspecified",
-        input.actor.type,
-        input.actor.id,
-      ],
+      `UPDATE refunds
+          SET status = 'succeeded', fee_reversed_fils = $2, acquirer_reference = $3, occurred_at = now()
+        WHERE id = $1 AND status = 'pending'
+        RETURNING id, occurred_at`,
+      [prepared.refundId, feeReversedFils, acquirerResult.acquirerReference],
     );
+    await client.query(`UPDATE transactions SET pending_refund_fils = pending_refund_fils - $2 WHERE id = $1`, [
+      prepared.transactionId,
+      prepared.requestedAmount,
+    ]);
     const refund = refundResult.rows[0];
     if (!refund) {
-      throw new Error("processRefund: insert into refunds returned no row");
+      throw new Error("processRefund: the pending refund row was not found");
     }
 
     // Double-entry reversal, mirroring capture's legs with the directions

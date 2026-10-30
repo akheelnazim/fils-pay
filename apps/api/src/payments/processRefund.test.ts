@@ -321,7 +321,7 @@ test("replaying the same idempotency key returns the first body and writes nothi
   assert.equal(Number(row.rows[0]!.refunded_fils), 3_000);
 });
 
-test("a declined refund answers 402 and writes no refund, ledger entry or event", async () => {
+test("a declined refund answers 402 and writes no succeeded refund (F22: a failed row), ledger entry or event", async () => {
   const merchant = await createApprovedMerchantWithApiKey("refund-declined");
   const txn = await capturedTransaction(merchant.rawKey, 5_000);
   const actor = await apiKeyActor(merchant.merchantId);
@@ -342,7 +342,7 @@ test("a declined refund answers 402 and writes no refund, ledger entry or event"
   assert.deepEqual(result.body, { error: "refund_declined" });
 
   const refunds = await pool.query<{ c: number }>(
-    `SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1`,
+    `SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1 AND status = 'succeeded'`,
     [txn.id],
   );
   assert.equal(refunds.rows[0]!.c, 0);
@@ -384,7 +384,7 @@ test("an acquirer transport error answers 502 and leaves the key retryable", asy
   assert.equal(claim.rows[0]!.status, "failed");
 
   const refunds = await pool.query<{ c: number }>(
-    `SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1`,
+    `SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1 AND status = 'succeeded'`,
     [txn.id],
   );
   assert.equal(refunds.rows[0]!.c, 0);
