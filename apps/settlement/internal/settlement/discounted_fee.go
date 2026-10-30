@@ -13,13 +13,13 @@ func ComputeSettlementFee(amountFils money.Fils, mdrBasisPoints, discountBasisPo
 }
 
 func computeSettlementFeeChecked(amountFils money.Fils, mdrBasisPoints, discountBasisPoints int64) (money.Fils, error) {
-	discount, err := money.ApplyRateFilsChecked(amountFils, discountBasisPoints)
+	fee, err := money.ApplyRateFilsChecked(amountFils, mdrBasisPoints)
 	if err != nil {
 		return 0, err
 	}
-	discountedAmount, err := money.SubtractFilsChecked(amountFils, discount)
+	discount, err := money.ApplyRateFilsChecked(fee, discountBasisPoints)
 	if err != nil {
 		return 0, err
 	}
-	return money.ApplyRateFilsChecked(discountedAmount, mdrBasisPoints)
+	return money.SubtractFilsChecked(fee, discount)
 }

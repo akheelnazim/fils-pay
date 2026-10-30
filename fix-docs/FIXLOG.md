@@ -165,7 +165,7 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 | S17 | Public pay endpoint allows unlimited card testing | `apps/api/src/paymentLinks/pay.ts` | open | |
 | S18 | Unsalted hash of card number, CVV and expiry stored | `apps/api/src/payments/authorize.ts` | open | |
 | S19 | `export-summary` has no auth check; disabled admins keep impersonation; no session rotation after OTP | `apps/api/src/routes/reporting.ts` | open | |
-| M21 | TypeScript and Go apply the discount in a different order (1 fil apart) | `apps/settlement/internal/settlement/discounted_fee.go` | open | |
+| M21 | TypeScript and Go apply the discount in a different order (1 fil apart) | `apps/settlement/internal/settlement/discounted_fee.go` | fixed | this commit |
 | R10 | Reporting consumer can skip outbox events for good (cursor by id, not commit order) | `apps/reporting/src/consumer/runConsumerPass.ts` | open | |
 | X15 | Admin "Rebuild analytics" double-counts unconsumed events | `apps/api/src/admin/reportingRebuild.ts` | open | |
 | D6 | Compose gives the API no settlement token; docs claim a `dev-token` default | `ops/docker-compose.yml` | open | |
@@ -188,6 +188,12 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 - What / why: a requested child was accepted if it belonged to any parent, exposing another merchant's transaction report.
 - Fix: require the split relationship's parent to match the authenticated caller; other requests retain the existing fallback to the caller.
 - Test: `scope.s13.fix.test.ts` checks self, own child, another parent's child and an unrelated merchant. Before the fix the other child was returned instead of the caller (`AssertionError: Expected values to be strictly equal`).
+
+### M21 — Align settlement discount with the capture ledger
+- Where: `apps/settlement/internal/settlement/discounted_fee.go`.
+- What / why: settlement discounted the amount before rounding MDR while the capture ledger discounts the rounded fee, causing one-fil discrepancies.
+- Fix: apply MDR first, then the discount to the rounded fee, using checked integer operations. Existing closed batches do not change automatically.
+- Test: `discounted_fee_m21_fix_test.go` failed before: `amount 10200, mdr 250, discount 1000: got 230, want 229`. Updated `discounted_fee_test.go`, which asserted the old order.
 
 #### R6 Reservation can expire while a payment-link capture is in progress
 - Where: `apps/api/src/paymentLinks/pay.ts`
