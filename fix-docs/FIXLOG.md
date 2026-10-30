@@ -44,7 +44,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M2 | Scheme statement always a few fils high | `apps/settlement/internal/settlement/batch.go` | fixed | `fix(M2)` |
 | M3 | Split payouts short every batch | `apps/settlement/internal/splits/allocate.go` | fixed | `fix(M3)` |
 | M4 | Net payout computed in float32 | `apps/settlement/internal/settlement/payable.go` | fixed | `fix(M4)` |
-| M5 | Lifetime payout estimate drifts (REAL) | open | |
+| M5 | Lifetime payout estimate drifts (REAL) | `apps/settlement/internal/settlement/payout_estimate.go` | fixed | `fix(M5)` |
 | M6 | Platform volume counter overflows int32 | `apps/settlement/internal/settlement/platform_volume.go` | fixed | `fix(M6)` |
 | M7 | Dashboard fee 245 vs charged 225 bps | `apps/api/src/fees/currentFeeScheduleDisplay.ts` | fixed | `fix(M7)` |
 | M8 | MDR recalculation rewrites paid batches | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `fix(M8)` |
@@ -343,6 +343,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: merchants are paid a few fils off on bigger batches (20,000.123 BD gross − 500.003 BD fee paid 1 fil short), growing with size (22,739 fils off on a 9-billion-fil batch). Breaks ADR-0001.
 - Fix: `return grossFils - feeFils`.
 - Test: `settlement/payable_fix_test.go` (empty, ordinary, 123,456.789 BD, odd fils, very large; three were wrong before) · ADR: 0001
+
+#### M5 Lifetime payout estimate drifts
+- Where: `apps/settlement/internal/settlement/payout_estimate.go`
+- What's wrong: the merchant's lifetime net payout figure (ops dashboard) and the 30-day payout estimate drifted from the real totals.
+- Why: the column was `REAL` (0040) and Go added each payout as `float32`; float32 is exact only up to 2^24 fils (16,777.216 BD). `EstimateMonthlyPayout` also summed in `float32`. Comments said "nobody reads it", but ops do (the seed even copied the float rounding with `Math.fround`).
+- What it breaks: past 16,777.216 BD single fils vanish (16,777,216 + 1 + 1 + 1 stayed 16,777,216); 9,987,654,451 fils was stored as 9,987,654,656; the 30-day estimate (no caller yet) would flag payouts against a wrong figure.
+- Fix: migration `0074_lifetime_payout_estimate_bigint.sql` (BIGINT, existing values rounded to whole fils); Go passes and sums `int64`/`money.Fils`; `EstimateMonthlyPayout` returns `money.Fils` (no callers); the seed sums integers. Widened the old test's read-back to `int64`. · Proper fix (if different): also recompute existing totals from paid batches (they keep their old drift); split payouts (`splits/allocate.go`) mark batches paid without bumping the estimate.
+- Test: `settlement/payout_estimate_fix_test.go` (+1 fils above 2^24, a 9.98-billion-fil total, the 30-day estimate; all three failed before) · ADR: 0001, 0005 (0074 is allowed)
 
 #### M6 Platform volume counter overflows int32
 - Where: `apps/settlement/internal/settlement/platform_volume.go`
