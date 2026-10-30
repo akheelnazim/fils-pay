@@ -151,7 +151,8 @@ function parseBoolEnv(value: string | undefined, fallback: boolean): boolean {
   return value === "true" || value === "1";
 }
 
-const DEV_FALLBACK_WEBHOOK_KEY_B64 = "dGVzdC1rZXktZm9yLWRldi1vbmx5LW5vdC1mb3ItcHJvZA==";
+// D3: must decode to exactly 32 bytes; the old value decoded to 34 and dev boot failed.
+const DEV_FALLBACK_WEBHOOK_KEY_B64 = Buffer.from("filspay-dev-only-webhook-key-32b").toString("base64");
 
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 

@@ -82,7 +82,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | --- | --- | --- | --- | --- |
 | D1 | Migration 0054 references missing table | open | |
 | D2 | Migration 0055 uses non-existent columns | open | |
-| D3 | Dev webhook key fallback is 34 bytes, not 32 | open | |
+| D3 | Dev webhook key fallback is 34 bytes, not 32 | `apps/api/src/config.ts` | fixed | `fix(D3)` |
 | D4 | API has no CORS; dashboard can't call it | open | |
 | D5 | Dockerfiles referenced by compose are missing | open | |
 
@@ -444,6 +444,14 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `reporting/consumer/applyEvent.fix.test.ts` (crashed before, warns and records the payout trend now); reporting suite 12/12 · ADR: none
 
 ### Deploy and setup (D)
+
+#### D3 Dev webhook key fallback is 34 bytes
+- Where: `apps/api/src/config.ts`
+- What's wrong: outside production, an API started without `WEBHOOK_SECRET_ENCRYPTION_KEY` refused to boot.
+- Why: the built-in development fallback `DEV_FALLBACK_WEBHOOK_KEY_B64` decoded to 34 bytes ("test-key-for-dev-only-not-for-prod"); `loadConfig` requires exactly 32 (AES-256), so it rejected its own fallback.
+- What it breaks: a fresh dev or test setup fails at start with "must base64-decode to exactly 32 bytes, got 34" until someone generates a key by hand.
+- Fix: the fallback is a 32-byte dev-only string. Production still requires the variable. Nothing was ever encrypted with the old value (it could not load), so no stored secrets change.
+- Test: `config.fix.test.ts` (development and test boot with a 32-byte key, failed before with "got 34"; production still refuses; an explicit key wins) · ADR: none
 
 ### FP-300 refunds (feature, last) (F)
 
