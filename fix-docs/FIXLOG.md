@@ -32,7 +32,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
 | R1 | Payment link charged twice (2026-05-14) | `apps/api/src/paymentLinks/pay.ts` | fixed | `fix(R1)` |
-| R2 | Duplicate acquirer callback notes (FP-201) | `apps/api/src/acquirer/callbacks.ts` | on hold (fix proposed) | |
+| R2 | Duplicate acquirer callback notes (FP-201) | `apps/api/src/acquirer/callbacks.ts` | fixed | `fix(R2)` |
 | R3 | Duplicate payout notifications (2026-08-21) | `apps/settlement/internal/settlement/payout_notify.go` | fixed | `fix(R3)` |
 | R5 | Adjustment CSV importable twice | `apps/api/src/admin/adjustmentImport.ts` | fixed | `fix(R5)` |
 
@@ -286,18 +286,14 @@ Keep each entry short. One per bug, under its class heading:
 - Fix: the claim returns `reserved_at::text` as a reservation token; release and finalize match it; before capture the payer refreshes its own reservation and, if it has been taken over, voids its authorization and answers 409 (nobody charged); a finalize miss after capture answers 409 `payment_link_reservation_lost` with the transaction id and logs it for a refund. `voidTransaction` accepts a `system` actor (as capture does). Checkout shows a terminal "charged, contact the merchant" message for that error. · Proper fix (if different): refund the lost capture automatically once FP-300 works; a `reservation_id` column instead of the timestamp token; a unique index so a link has at most one captured transaction (FP-202).
 - Test: `paymentLinks/pay.r1.fix.test.ts` (lost during authorize → voided + 409, lost during capture → 409 not "paid", no cross-finalize, normal path; three failed before) · ADR: none
 
-#### R2 Duplicate acquirer callback notes (FP-201) — on hold, fix proposed
+#### R2 Duplicate acquirer callback notes (FP-201)
 - Where: `apps/api/src/acquirer/callbacks.ts`
-- What's wrong: a redelivered acquirer callback (same `callbackId`) writes a second note; five concurrent deliveries write five.
-- Why: plain `INSERT` and no unique index on `acquirer_callback_notes.callback_id`. The "`processed_events`" dedupe in the postmortem and 0051's "FP-238 unique index — done" were never built.
-- What it breaks: duplicate verdicts on the transaction timeline (the May incident started from two notes on one link).
-- Proposed fix (owner chose: archive duplicates, reversible): next free migration (0074+):
-  1. `CREATE TABLE acquirer_callback_notes_duplicates (LIKE acquirer_callback_notes INCLUDING DEFAULTS, archived_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
-  2. move every row after the earliest per `callback_id` (`row_number() OVER (PARTITION BY callback_id ORDER BY created_at, id) > 1`) with `WITH moved AS (DELETE … RETURNING *) INSERT INTO …_duplicates SELECT *, now() FROM moved`;
-  3. `CREATE UNIQUE INDEX acquirer_callback_notes_callback_id_key ON acquirer_callback_notes (callback_id)`;
-  4. header comment with the undo: `DROP INDEX …; INSERT INTO acquirer_callback_notes SELECT <columns> FROM …_duplicates; DROP TABLE …_duplicates`.
-  Code: `INSERT … ON CONFLICT (callback_id) DO NOTHING` (redelivery returns normally, no throw).
-- Test (written, parked): `fix-docs/pending/R2/callbacks.fix.test.ts` → move to `apps/api/src/acquirer/`. Fails today 2 ≠ 1 (redelivery) and 5 ≠ 1 (concurrent); distinct callbacks still give 2.
+- Clue: "The bank sent the same callback twice and we saved two identical notes on one payment."
+- What's wrong: a redelivered acquirer callback with the same `callbackId` appends another note; five concurrent deliveries append five.
+- Why: plain `INSERT` with no uniqueness constraint on `acquirer_callback_notes.callback_id`; the claimed `processed_events` table and FP-238 index were never built.
+- What it breaks: duplicate rows corrupt the persisted acquirer callback history used for support and data review. No application reader or UI for these notes was found. Current code only appends a fraud-review note; it does not capture funds or change transaction state, despite the older postmortem's attribution of duplicate captures to this path.
+- Fix: migration `0079_acquirer_callback_note_idempotency.sql` archives all but the earliest note per callback ID and adds a unique index. The insert uses `ON CONFLICT (callback_id) DO NOTHING`. Acquirer comparison docs confirm IDs remain stable across retries. · Proper fix: same; the database index is the concurrency backstop.
+- Test: `apps/api/src/acquirer/callbacks.fix.test.ts` (2 notes on replay and 5 on concurrent deliveries failed before; one note after each, distinct callbacks still record separately) · ADR: none
 
 #### R3 Duplicate settlement.paid notifications (2026-08-21)
 - Where: `apps/settlement/internal/settlement/payout_notify.go`
