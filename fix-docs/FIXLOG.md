@@ -75,6 +75,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | `scripts/reconcile_march.ts` | fixed | `fix(X5)` |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | `apps/reporting/src/consumer/runConsumerPass.ts` | fixed | `fix(X6)` |
 | X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `fix(X8)` |
+| X9 | Reconciliation page crashes when the calculated gap is negative | `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx` | open | |
+| X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html` | open | |
 
 ### Deploy and setup (D)
 
@@ -530,6 +532,26 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: the reporting pass rolls back and retries the same event forever, so every dashboard total stops updating for all merchants.
 - Fix: treat a missing rollup row as 0 and log the lag warning.
 - Test: `reporting/consumer/applyEvent.fix.test.ts` (crashed before, warns and records the payout trend now); reporting suite 12/12 · ADR: none
+
+### Merchant UI findings (X)
+
+#### X9 Reconciliation page crashes when gapFils is negative
+- Where: `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx`
+- Clue: `format.ts` comment says `toFils` throws for negative values; reconciliation comments say nonzero gaps can be real.
+- What's wrong: the reconciliation report renders `gapFils` through `bhd()`, which calls `toFils()` with negative values disabled.
+- Why: a negative reconciliation difference is valid, but the shared display helper only accepts nonnegative amounts.
+- What it breaks: loading a report with a negative gap throws during render, so the merchant cannot view the reconciliation report.
+- Fix: add a signed-fils display helper or allow negative values for this display path; keep positive-only validation for inputs that represent amounts owed/charged.
+- Test: pending · ADR: 0001
+
+#### X10 Merchant dashboard has checkout page title
+- Where: `apps/web/index.html`
+- Clue: `fix-docs/merchant-ui-comment-leads.md` retains the source comment: "title says Checkout but this is the whole dashboard too."
+- What's wrong: all merchant UI routes use the document title `FilsPay Checkout`.
+- Why: the title is hard-coded in the shared SPA HTML entry point.
+- What it breaks: browser tabs/history label the merchant dashboard as checkout, making multiple FilsPay pages hard to distinguish and presenting the wrong page identity.
+- Fix: set a dashboard-wide title and update it for the public checkout route if route-specific titles are desired.
+- Test: pending · ADR: none
 
 ### Deploy and setup (D)
 
