@@ -69,7 +69,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
 | X1 | `expire_holds.ts` can delete every hold | `scripts/expire_holds.ts` | fixed | `fix(X1)` |
-| X2 | March sweep script not idempotent | open | |
+| X2 | March sweep script not idempotent | `scripts/reconcile_march.ts` | fixed | `fix(X2)` |
 | X3 | Large export can OOM the API | open | |
 | X4 | Credit threshold can be split around | open | |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | open | |
@@ -409,6 +409,15 @@ Keep each entry short. One per bug, under its class heading:
 - Fix: one `UPDATE holds SET status = 'expired' WHERE status = 'active' AND expires_at < now()`; deleted `lib/sqlFilter.ts` and `expire_holds.test.ts`, which only served the DELETE (the latter asserted its SQL text). · Smallest alternative (not used): return early on an empty list; it would still delete holds against HANDOVER and keep the read-then-delete gap.
 - Note: the `MK` comment in `db/migrations/0005_holds.sql` (script deletes rows, 'expired' is transient) is false; left as is because the migration has applied.
 - Test: `scripts/expire_holds.fix.test.ts` (quiet night changes nothing, expired hold marked not deleted, other statuses untouched, count never drops; all in a rolled-back transaction; three failed before) · ADR: none
+
+#### X2 March sweep script not idempotent
+- Where: `scripts/reconcile_march.ts`
+- Clue: "someone ran it twice on staging and the gap doubled. Nobody knows if it ran more than once on production. The log file only has one timestamp."
+- What's wrong: every run of the March 2026 residue sweep posted the whole residue again.
+- Why: each run posted with a fresh `randomUUID()` group and nothing checked for an earlier run (the `am:` comment "entry_group_id dedupes it" and RUNBOOK's "checks for an existing posting… a second run is a no-op" were both false). There was no dry-run flag, so FH's 3 July "dry run" (13 lines, 70 fils "identical") posted a second time. The log has one timestamp because `>` overwrites it.
+- What it breaks: each extra run takes the March residue (70 fils across 13 lines in production) out of merchant payables again, doubling finance's gap; production has likely been posted at least twice.
+- Fix: the sweep is `runSweep(client, { dryRun })` inside the caller's transaction. `--dry-run` computes and reports, writes nothing. A real run takes an advisory lock on the sweep's description, then refuses ("REFUSED", exit 1) if any ledger entry with that description exists. Window left on the UTC month (ADR-0003); the posting direction is X5. RUNBOOK's claim is now true; its copy-for-next-month step now also says to rename `SWEEP_DESCRIPTION` and dry-run first. The test hides any committed sweep rows inside its own transaction, so it also runs on a DB where March was posted. · Proper fix (if different): a unique key on the sweep (e.g. a `ledger_postings` row per sweep + month) instead of a description match, and month-end residue automated (RUNBOOK). Production clean-up: count `ledger_entries WHERE description LIKE 'March 2026 scheme rounding residue%'` (2 legs per merchant per run) and reverse the extra runs with finance; not done here (never run scripts against data).
+- Test: `scripts/reconcile_march.fix.test.ts` (first run posts once, second run posts nothing, `--dry-run` writes nothing, dry run after a real run writes nothing, round merchant untouched; rolled back; three failed before: second run and dry runs posted) · ADR: 0003 (window unchanged)
 
 #### X8 Reporting crashes on its own lag check
 - Where: `apps/reporting/src/consumer/applyEvent.ts`

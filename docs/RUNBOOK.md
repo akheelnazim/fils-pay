@@ -116,9 +116,11 @@ boundary"), finance runs a month-end script modelled on
 
 1. Copy the script, change the window constants at the top to the new
    month (UTC calendar month, `YYYY-MM-01T00:00Z` to the first of the next
-   month).
-2. Run it once against production with finance on the call.
-3. Attach the log from `scripts/out/` to the month-end ticket.
+   month), and change `SWEEP_DESCRIPTION` to name the new month (the
+   already-posted check matches it).
+2. Run it with `--dry-run` first and check the figures with finance.
+3. Run it once against production with finance on the call.
+4. Attach the log from `scripts/out/` to the month-end ticket.
 
 The script checks for an existing posting with the same description, so a
 second run is a no-op.
