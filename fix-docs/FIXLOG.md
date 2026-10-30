@@ -60,7 +60,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
 | T1 | Daily close runs 03:00 Bahrain, not midnight | `apps/settlement/internal/scheduler/daemon.go` | fixed | `fix(T1)` |
-| T2 | Admin tool flips test merchants into settlement | open | |
+| T2 | Admin tool flips test merchants into settlement | `apps/api/src/routes/adminMerchantsRecompute.ts` | fixed | `fix(T2)` |
+| T3 | Recompute statuses reports `openAuthorizations` as always 0 (its query excludes `authorized` rows) | `apps/api/src/admin/transactionStatusRecompute.ts` | open | |
 
 ### Scripts and other (X)
 
@@ -327,6 +328,14 @@ Keep each entry short. One per bug, under its class heading:
 - Fix: pull the due decision into `dueBusinessDate(now, delay)` and convert `now` with new `settlement.InBusinessDayZone` before `BusinessDayWindow`. Removed the false "UTC here is fine" comments. · Proper fix (if different): convert inside `BusinessDayWindow` (`date.In(businessDayLocation).Date()`); it would break `window_utc_compat_test.go`, which locks today's behaviour, and change the CLI/API callers that pass a parsed date, so it is left for later.
 - Note: `DaemonRunDelayMinutes` has no range check (config.go); 1440 or more means the close is never due. Separate hardening, not T1.
 - Test: `scheduler/daemon_fix_test.go` (00:10 not due, 00:15/00:20 due, delay 0, 02:59, 03:15, 23:59, year end; the 00:00–03:00 cases failed before) · ADR: none
+
+#### T2 Admin tool moves test merchants into real settlement
+- Where: `apps/api/src/routes/adminMerchantsRecompute.ts`
+- What's wrong: "Recompute transaction statuses" quietly set `test_mode = false` on a sandbox merchant.
+- Why: the route called `reconcileSandboxFlag`, which cleared the flag whenever the recompute found no open authorizations; and since the recompute's query skips `authorized` rows (T3), that was every merchant with any non-authorized transaction.
+- What it breaks: Go settlement (`CloseBatch` filters `test_mode = false`) then batches the sandbox merchant's test captures and pays them out as real money.
+- Fix: drop the call; the route still returns and audits `flagsUpdated: []` so the API and admin type keep their shape; deleted `admin/merchantFlags.ts` (its only caller). · Proper fix (if different): also remove `flagsUpdated` from the response, the audit metadata and `apps/admin/src/types.ts` (nothing reads it).
+- Test: `routes/adminMerchantsRecompute.fix.test.ts` (test merchant stays test, live stays live, with an authorization; the first failed before) · ADR: none
 
 ### Scripts and other (X)
 
