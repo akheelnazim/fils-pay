@@ -22,6 +22,7 @@ import { adminCreditRoutes } from "./adminCredits.js";
 import { adminMerchantRoutes } from "./adminMerchants.js";
 import { adminMerchantsBulkRoutes } from "./adminMerchantsBulk.js";
 import { adminMerchantsRecomputeRoutes } from "./adminMerchantsRecompute.js";
+import { adminPaymentLinkRoutes } from "./adminPaymentLinks.js";
 
 /**
  * The settlement calls, injectable so route-level tests can prove this
@@ -81,6 +82,7 @@ export async function adminRoutes(app: FastifyInstance, options: AdminRoutesOpti
   await app.register(adminAuthRoutes, { prefix: "/auth" });
   await app.register(adminMerchantRoutes, { prefix: "/merchants" });
   await app.register(adminMerchantsRecomputeRoutes, { prefix: "/merchants" });
+  await app.register(adminPaymentLinkRoutes, { prefix: "/payment-links" });
   await app.register(adminMerchantsBulkRoutes, { prefix: "/merchants" });
   await app.register(adminBalanceAdjustmentRoutes, { prefix: "/merchants" });
   await app.register(adminAdjustmentImportRoutes, { prefix: "/adjustment-imports" });

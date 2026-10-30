@@ -59,9 +59,24 @@ SELECT pl.id, pl.merchant_id, pl.reserved_at, pl.capture_transaction_id,
  WHERE pl.capture_transaction_id IS NOT NULL;
 ```
 
-Confirm the acquirer outcome and reconcile it with the ledger with Finance.
-Do not clear the marker or retry the charge until the outcome is established
-and an audited correction is agreed. Automated recovery is tracked as R7.
+Confirm the acquirer outcome in the acquirer's own portal and reconcile it
+with the ledger with Finance. Never retry the charge. Then, as a finance or
+super_admin user, report what you found (R7):
+
+```
+POST /v1/admin/payment-links/<link id>/recover-capture
+{ "attestedOutcome": "captured" | "not_captured", "reason": "<ticket and what you saw>" }
+```
+
+- `captured`: the link becomes paid. Refused with `ledger_not_reconciled` if
+  the transaction is not captured here for the full amount; Finance books the
+  capture first, then repeat the call.
+- `not_captured`: the link is released for a new attempt and the dangling
+  authorization is voided. Refused with `local_books_show_capture` if a
+  capture is recorded here; reconcile that first.
+
+Each call is audited and repeating the same report does nothing more.
+Reservations created before migration 0081 have no marker and are not covered.
 
 When deploying migration 0081, pause new payment-link traffic, drain all old
 API workers and reconcile their in-flight or stale reservations before

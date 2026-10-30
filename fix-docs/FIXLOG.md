@@ -36,7 +36,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | R3 | Duplicate payout notifications (2026-08-21) | `apps/settlement/internal/settlement/payout_notify.go` | fixed | `fix(R3)` |
 | R5 | Adjustment CSV importable twice | `apps/api/src/admin/adjustmentImport.ts` | fixed | `fix(R5)` |
 | R6 | A payment link reservation can expire during capture, allowing another charge | `apps/api/src/paymentLinks/pay.ts` | fixed | `fix(R6)` |
-| R7 | Uncertain payment-link captures require manual reconciliation | `apps/api/src/paymentLinks/pay.ts`, `docs/RUNBOOK.md` | open | |
+| R7 | Uncertain payment-link captures require manual reconciliation | `apps/api/src/paymentLinks/pay.ts`, `docs/RUNBOOK.md` | fixed | `fix(R7)` |
 
 ### Money correctness (M)
 
@@ -159,6 +159,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 - What's wrong: R6 keeps a link processing after an uncertain capture outcome or crash, but the application has no automated resolution or operator interface.
 - What it breaks: an affected link remains unavailable until support and Finance reconcile its transaction and acquirer outcome.
 - Next: add audited, idempotent recovery that checks the acquirer before finalizing or releasing the link. Never clear a marker or retry a charge based only on the local transaction status.
+- Fix (user decision 2026-10-30: operator-attested recovery): the acquirer interface has no lookup and the simulator keeps no state, so "check the acquirer" cannot be automatic. New `POST /v1/admin/payment-links/:id/recover-capture` (finance / super_admin), body `{ attestedOutcome: "captured" | "not_captured", reason (5–500 chars) }`, where the operator reports what they verified at the acquirer. `recoverPaymentLinkCapture` locks the link and its marked transaction and acts only if the local books agree: `captured` finalizes the link as paid only when the transaction is captured here for the full link amount (else 409 `ledger_not_reconciled`: Finance books the capture first); `not_captured` releases the link and voids the dangling authorization (after commit, best effort) only when no capture is recorded here (else 409 `local_books_show_capture`). One `admin_audit_log` row (`payment_link_capture_recovery`, target `payment_link`) in the same transaction; repeating the same report is a 200 no-op with no second row, a different later report is 409. Never retries a charge and never clears the marker on local status alone. RUNBOOK updated. · Proper fix (if different): a real acquirer inquiry (`lookup` on the acquirer interface) so the check is automatic, with the operator route as the fallback; reservations created before migration 0081 have no marker and still need the manual path.
+- Test: `paymentLinks/recover.r7.fix.test.ts` (captured with agreeing books → paid, audit row, repeat is a no-op; captured with no local capture → 409, untouched; not captured → released, authorization voided, repeat no-op, opposite report 409; not captured with a local capture → 409; healthy link, unknown link, bad bodies, no login, support role all refused). The route did not exist before · ADR: none
 
 #### M17 Integer overflow in Go rate and split calculations
 - Where: `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go`

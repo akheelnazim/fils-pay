@@ -19,7 +19,8 @@ export type AdminAuditAction =
   | "balance_adjustment"
   | "balance_adjustment_journaled"
   | "mdr_recalculation"
-  | "adjustment_import_applied";
+  | "adjustment_import_applied"
+  | "payment_link_capture_recovery";
 
 export type AdminAuditTargetType =
   | "merchant"
@@ -28,6 +29,7 @@ export type AdminAuditTargetType =
   | "settlement_batch"
   | "credit_request"
   | "adjustment_import"
+  | "payment_link"
   | "platform";
 
 export interface AdminAuditEntry {
