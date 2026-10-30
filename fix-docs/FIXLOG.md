@@ -1,6 +1,7 @@
 # Fix log
 
-One row per bug. One bug = one commit (test + fix + this log). IDs come from
+One row per bug. One bug = one commit (test + fix + this log), made on its own branch and
+squash-merged into an up-to-date `main`. IDs come from
 `filspay-audit-findings.md`. Classes: S security · R races · M money · T timing · X scripts/other · D deploy · F FP-300 · Q test suite.
 Status: `open` · `test` (failing test added) ·
 `fixed` · `wontfix` (say why).

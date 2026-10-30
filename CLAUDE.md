@@ -30,6 +30,8 @@ A Bahrain card-payments platform handed over with bugs. The job: **fix the audit
 ## Rules
 
 - One bug = one commit, with a descriptive message. Never bundle fixes.
+- One branch per fix: pull `main`, branch (`fix/<ID>`, `feat/FP-300-<F#>`, `docs/<topic>`), work there,
+  pull `main` again, then `git merge --squash` into `main` as that single commit, push, delete the branch.
 - Every reported bug gets a failing test before it is fixed, plus edge cases where they apply.
 - A reviewer agent checks every fix for breakage before it is committed.
 - Order: the audit's suggested order, then remaining and newly found bugs by complexity;
