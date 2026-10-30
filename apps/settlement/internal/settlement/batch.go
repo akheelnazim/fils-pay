@@ -237,6 +237,39 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: net payout: %w", err)
 	}
 
+	// F8: refunds come off the payout, net of the fee reversed. A refund the
+	// day's net can't cover stays unbatched and is taken by a later batch
+	// (the payout never goes negative and the debt isn't lost).
+	refundRows, err := tx.Query(ctx, `
+		SELECT id, amount_fils, fee_reversed_fils FROM refunds
+		 WHERE merchant_id = $1 AND status = 'succeeded'
+		   AND settlement_batch_id IS NULL AND occurred_at < $2
+		 ORDER BY occurred_at, id
+		 FOR UPDATE
+	`, merchantID, end)
+	if err != nil {
+		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: select refunds: %w", err)
+	}
+	var refundIDs []uuid.UUID
+	for refundRows.Next() {
+		var id uuid.UUID
+		var amount, feeReversed int64
+		if err := refundRows.Scan(&id, &amount, &feeReversed); err != nil {
+			refundRows.Close()
+			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: scan refund: %w", err)
+		}
+		owed := money.Fils(amount - feeReversed)
+		if owed > netPayout {
+			continue
+		}
+		netPayout -= owed
+		refundIDs = append(refundIDs, id)
+	}
+	if err := refundRows.Err(); err != nil {
+		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: iterate refunds: %w", err)
+	}
+	refundRows.Close()
+
 	// Record this batch's contribution to the platform-wide lifetime
 	// processed-volume counter, in the same transaction that freezes this
 	// batch's own totals — so the counter and the batch it describes
@@ -263,6 +296,15 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 		`, eventIDs, batchID)
 		if err != nil {
 			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: mark events batched: %w", err)
+		}
+	}
+
+	if len(refundIDs) > 0 {
+		_, err = tx.Exec(ctx, `
+			UPDATE refunds SET settlement_batch_id = $2 WHERE id = ANY($1)
+		`, refundIDs, batchID)
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: mark refunds batched: %w", err)
 		}
 	}
 

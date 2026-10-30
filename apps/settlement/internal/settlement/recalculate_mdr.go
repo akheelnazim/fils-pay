@@ -116,7 +116,9 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		if diff == 0 {
 			continue
 		}
-		newNetPayout, err := money.SubtractFilsChecked(b.grossFils, newFee)
+		// F8: move the stored net by the fee difference rather than rebuilding
+		// it as gross - fee, which would drop the refunds CloseBatch deducted.
+		newNetPayout, err := money.SubtractFilsChecked(b.netPayoutFils, diff)
 		if err != nil {
 			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: net payout: %w", err)
 		}

@@ -66,7 +66,7 @@ already exists:
 | Validation / status | `refundValidation.ts`, `refundState.ts` | complete, tested |
 | Fee reversal | `calculateRefundFee()` in `packages/money`, capped and net of discount in `processRefund.ts` | complete (FP-300/F4, F5) |
 | Schema | `refunds` (0042), `transactions.refunded_fils` (0043), event types (0044) | migrated |
-| Settlement | batch reopen in `apps/settlement` | to do |
+| Settlement | `CloseBatch` in `apps/settlement` takes unbatched refunds (amount less fee reversed) off the payout | live (FP-300/F8) |
 | Webhook | `refund.succeeded`: `buildEnvelope` case in `webhooks/envelope.ts`, eligible list in `dispatcher.ts` | live (FP-300/F7): data `{ transactionId, merchantId, refundId, amountFils, feeReversedFils, status, refundedTotalFils }` |
 | UI | `apps/web/src/pages/transactions/RefundDrawer.tsx` | on the transaction detail page (FP-300/F6) |
 
