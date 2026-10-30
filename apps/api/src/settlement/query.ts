@@ -250,7 +250,8 @@ export async function listBatchTransactions(
 /**
  * gapFils = ledgerMerchantPayableNetFils - settlementNetPayoutFils -
  * pendingUnbatchedFils. Refund legs are included both in the ledger figure
- * and in pending, so a period with refunds still explains to zero.
+ * and, until a batch takes them (F8: they then reduce its net), in pending
+ * (amount less fee reversed), so a period with refunds still explains to zero.
  */
 export interface ReconciliationReport {
   periodFrom: string;
@@ -286,7 +287,7 @@ export async function getReconciliationReport(
   const windowStart = bahrainLocalMidnightUtc(input.from);
   const windowEnd = bahrainLocalMidnightUtc(input.to);
 
-  const [ledgerResult, settlementResult, pendingResult, merchantResult] = await Promise.all([
+  const [ledgerResult, settlementResult, pendingResult, merchantResult, pendingRefundsResult] = await Promise.all([
     pool.query<{ net: string }>(
       `SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0) AS net
          FROM ledger_entries
@@ -323,6 +324,14 @@ export async function getReconciliationReport(
       `SELECT negotiated_discount_bps FROM merchants WHERE id = $1`,
       [input.merchantId],
     ),
+    // F10: refunds no batch has taken yet.
+    pool.query<{ total: string }>(
+      `SELECT COALESCE(SUM(amount_fils - fee_reversed_fils), 0) AS total
+         FROM refunds
+        WHERE merchant_id = $1 AND status = 'succeeded' AND settlement_batch_id IS NULL
+          AND occurred_at >= $2 AND occurred_at < $3`,
+      [input.merchantId, windowStart, windowEnd],
+    ),
   ]);
 
   const merchant = merchantResult.rows[0];
@@ -340,6 +349,8 @@ export async function getReconciliationReport(
     }
     pendingUnbatchedFils += amountFils - feeFils;
   }
+
+  pendingUnbatchedFils -= Number(pendingRefundsResult.rows[0]?.total ?? 0);
 
   const ledgerMerchantPayableNetFils = Number(ledgerResult.rows[0]?.net ?? 0);
   const settlementNetPayoutFils = Number(settlementResult.rows[0]?.total ?? 0);

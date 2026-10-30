@@ -117,6 +117,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F8 | Settlement ignores refunds: the payout isn't reduced | `apps/settlement/internal/settlement/batch.go` | fixed | `feat(FP-300/F8)` |
 | F9 | Reporting has no refund case; the daily rollup has no refund columns and buckets by UTC | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `feat(FP-300/F9)` |
 | F15 | `refund_merchant_summary` joined on the wrong id, so it was always empty | `db/migrations/0083_refund_merchant_summary_join.sql` | fixed | `feat(FP-300/F15)` |
+| F10 | Reconciliation's pending figure leaves out refunds, so they show as a gap | `apps/api/src/settlement/query.ts` | fixed | `feat(FP-300/F10)` |
 
 ### Test suite (Q)
 
@@ -713,6 +714,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it breaks: no refunds at all, from the API or the dashboard.
 - Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
 - Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
+
+#### F10 Reconciliation shows every refund as a gap
+- Where: `apps/api/src/settlement/query.ts`
+- What's wrong: capture 10 000 fils (fee 250), refund 4 000 (fee reversed 100), nothing batched: the report said `gapFils −3900`, `explained false`. Its own doc comment claimed refund legs were already in pending.
+- Why: the ledger figure (`merchant_payable`) includes the refund's legs, but pending only summed unbatched captures.
+- What it breaks: finance sees a false gap after every refund ("reconciliation still ties out after refunds" was Huda's rule).
+- Fix: pending also subtracts `SUM(amount_fils − fee_reversed_fils)` of the merchant's succeeded refunds in the window that no batch has taken (`settlement_batch_id IS NULL`); once a batch takes a refund (F8) its net carries the reduction instead. Doc comment corrected. The web `ReconciliationPage` only displays the fields. Known limit: a refund and the batch that takes it can fall in different report windows, which shows a gap in one of them (the capture and its batch already behave this way). · Proper fix (if different): same.
+- Test: `settlement/reconciliationRefunds.fix.test.ts` (refund with nothing batched: pending 5 850, gap 0; capture and refund both batched: gap 0; a refund outside the window isn't counted). The first failed before: `gapFils −3900` · ADR: 0003
 
 #### F15 Refund summary view is always empty
 - Where: `db/migrations/0083_refund_merchant_summary_join.sql` (replaces the view from 0072)
