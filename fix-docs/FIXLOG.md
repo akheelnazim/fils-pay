@@ -152,6 +152,28 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | `apps/api/src/webhooks/archiveReplay.test.ts` | fixed | `fix(Q2)` |
 | Q3 | Go test packages run in parallel against one DB and deadlock in `RebuildAllBalances`; run with `-p 1` | `apps/settlement/ (go test)` | fixed | `fix(Q3)` |
 
+### Open from the 2026-10-30 scan
+
+Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.md`.
+
+| ID | Bug | Where | Status | Commit |
+| --- | --- | --- | --- | --- |
+| S13 | Any merchant can read another merchant's transactions via the reporting filter | `apps/api/src/reporting/scope.ts` | open | |
+| S14 | SSRF through webhook URLs (no private-IP block, redirects followed, body echoed) | `apps/api/src/webhooks/create.ts` | open | |
+| S15 | Compose stack runs the API in development mode; no `.dockerignore` (secrets and `.git` in the image) | `ops/docker-compose.yml`, `ops/Dockerfile.node` | open | |
+| S16 | OTP guess limit resets on every login; no rate limiting | `apps/api/src/routes/auth.ts`, `routes/adminAuth.ts` | open | |
+| S17 | Public pay endpoint allows unlimited card testing | `apps/api/src/paymentLinks/pay.ts` | open | |
+| S18 | Unsalted hash of card number, CVV and expiry stored | `apps/api/src/payments/authorize.ts` | open | |
+| S19 | `export-summary` has no auth check; disabled admins keep impersonation; no session rotation after OTP | `apps/api/src/routes/reporting.ts` | open | |
+| M21 | TypeScript and Go apply the discount in a different order (1 fil apart) | `apps/settlement/internal/settlement/discounted_fee.go` | open | |
+| R10 | Reporting consumer can skip outbox events for good (cursor by id, not commit order) | `apps/reporting/src/consumer/runConsumerPass.ts` | open | |
+| X15 | Admin "Rebuild analytics" double-counts unconsumed events | `apps/api/src/admin/reportingRebuild.ts` | open | |
+| D6 | Compose gives the API no settlement token; docs claim a `dev-token` default | `ops/docker-compose.yml` | open | |
+| X16 | Payout trends can stay "closed" forever | `apps/reporting/src/consumer/applyEvent.ts` | open | |
+| T5 | Admin Settlement page pre-fills the wrong (UTC) date | `apps/admin/src/pages/settlement/SettlementPage.tsx` | open | |
+| X17 | Call to a Go endpoint that doesn't exist; docs naming env vars nothing reads | `apps/api/src/admin/settlementClient.ts`, `docs/` | open | |
+| X18 | Dead code: `v1/` tree, `transactions/lookup.ts`, `receipt.ts`, reporting `queryOne.ts`, `notifySettlementRefundAdjustment` | `apps/api/src/v1/` | open | |
+
 ## Findings and follow-ups from later review
 
 #### R6 Reservation can expire while a payment-link capture is in progress
