@@ -158,7 +158,7 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
-| S13 | Any merchant can read another merchant's transactions via the reporting filter | `apps/api/src/reporting/scope.ts` | open | |
+| S13 | Any merchant can read another merchant's transactions via the reporting filter | `apps/api/src/reporting/scope.ts` | fixed | this commit |
 | S14 | SSRF through webhook URLs (no private-IP block, redirects followed, body echoed) | `apps/api/src/webhooks/create.ts` | open | |
 | S15 | Compose stack runs the API in development mode; no `.dockerignore` (secrets and `.git` in the image) | `ops/docker-compose.yml`, `ops/Dockerfile.node` | open | |
 | S16 | OTP guess limit resets on every login; no rate limiting | `apps/api/src/routes/auth.ts`, `routes/adminAuth.ts` | open | |
@@ -182,6 +182,12 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 | P4 | Row-by-row writes that could be one statement (status recompute, scheme export lines, webhook fan-out) | various | open | |
 
 ## Findings and follow-ups from later review
+
+### S13 — Restrict reporting to the caller's split children
+- Where: `apps/api/src/reporting/scope.ts`.
+- What / why: a requested child was accepted if it belonged to any parent, exposing another merchant's transaction report.
+- Fix: require the split relationship's parent to match the authenticated caller; other requests retain the existing fallback to the caller.
+- Test: `scope.s13.fix.test.ts` checks self, own child, another parent's child and an unrelated merchant. Before the fix the other child was returned instead of the caller (`AssertionError: Expected values to be strictly equal`).
 
 #### R6 Reservation can expire while a payment-link capture is in progress
 - Where: `apps/api/src/paymentLinks/pay.ts`
