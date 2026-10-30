@@ -121,6 +121,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F11 | Transaction responses lack `refundedFils` | `apps/api/src/transactions/serialize.ts` | fixed | `feat(FP-300/F11)` |
 | F12 | A full refund of a partial capture stayed `partially_captured` | `apps/api/src/payments/refundState.ts` | fixed | `feat(FP-300/F12)` |
 | F16 | Fee recalculation can push a refunded batch's net payout below zero | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `feat(FP-300/F16)` |
+| F17 | A refund's status, event and webhook count other refunds still in flight | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F17)` |
 
 ### Test suite (Q)
 
@@ -727,6 +728,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it covers: authorize 10 000 fils → capture → `POST /v1/refunds` of 3 000 → a blank-amount refund of the remaining 7 000 → a third refund answers 409. Checks: every ledger entry group balances; `merchant_payable` and `platform_fee_revenue` both net to 0 for the payment; refunds sum to 10 000 and the fee reversed to 250 (the whole fee); the transaction is `refunded` with `refundedFils 10 000`; two `refund.succeeded` outbox rows, delivered to the merchant's endpoint with signatures that verify (`partially_refunded` then `refunded`, totals 3 000 and 10 000); the reconciliation report has gap 0.
 - Payout reduction is the Go side (F8, `settlement/refund_fix_test.go`): a TS test can't run `CloseBatch`.
 - Test result: passes on first complete run against the fixed code · ADR: none
+
+#### F17 Refund status and webhook run ahead of in-flight refunds
+- Where: `apps/api/src/payments/processRefund.ts`
+- What's wrong: 4 000 captured, two refunds of 2 000 at once; the first to finish reported status `refunded`, event `refunded`, total 4 000. If the second was then declined, the status fell back but the merchant had already been sent a false `refunded` webhook. (Found in the Opus review; F3 had recorded it as a known limit.)
+- Why: step 3 read `transactions.refunded_fils`, which also holds other in-flight refunds' reservations, to derive the status, event type and `refundedTotalFils`.
+- What it breaks: a webhook and event that state a refunded total that never happened; recompute and dashboards disagree with it.
+- Fix: `current()` now returns the sum of succeeded `refunds` rows (read under the same transaction lock), and a succeeding refund uses that plus its own amount; the decline and error paths recompute the status from the succeeded sum too. `refunded_fils` stays the reservation counter used to validate new refunds (F3), and F11's `refundedFils` still shows it (in-flight amounts included, as documented). The F3 "known limit" about statuses and totals no longer applies. · Proper fix (if different): a `pending` refund row (F3's proper fix) so in-flight amounts are visible as such everywhere.
+- Test: `payments/processRefund.f17.fix.test.ts` (A approved while B is held and then declined: A's event says `partially_refunded`, total 2 000; after B's decline the status is still `partially_refunded` and `refunded_fils` 2 000). Failed before: `expected 'partially_refunded', actual 'refunded'` · ADR: 0001
 
 #### F16 RecalculateMDR can make a refunded batch's net negative
 - Where: `apps/settlement/internal/settlement/recalculate_mdr.go`

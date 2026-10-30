@@ -170,15 +170,20 @@ export async function processRefund(
 
   // 3 journal
   return withTransaction(pool, async (client) => {
-    // F3: the current totals, read under the lock: refunded includes
-    // reservations, and a capture may have landed during the acquirer call.
+    // F3: the current totals, read under the lock: a capture may have landed
+    // during the acquirer call. F17: the refunded total is what has actually
+    // succeeded (refunded_fils also holds other in-flight refunds' reservations,
+    // which can still be declined), so statuses and events never run ahead.
     const current = async (): Promise<{ refundedFils: Fils; capturedFils: Fils }> => {
-      const r = await client.query<{ refunded_fils: string; captured_fils: string }>(
-        `SELECT refunded_fils, captured_fils FROM transactions WHERE id = $1 FOR UPDATE`,
+      const r = await client.query<{ captured_fils: string; succeeded_fils: string }>(
+        `SELECT t.captured_fils,
+                (SELECT COALESCE(SUM(amount_fils), 0) FROM refunds
+                  WHERE transaction_id = t.id AND status = 'succeeded')::text AS succeeded_fils
+           FROM transactions t WHERE t.id = $1 FOR UPDATE`,
         [prepared.transactionId],
       );
       return {
-        refundedFils: toFils(Number(r.rows[0]!.refunded_fils)),
+        refundedFils: toFils(Number(r.rows[0]!.succeeded_fils)),
         capturedFils: toFils(Number(r.rows[0]!.captured_fils)),
       };
     };
@@ -211,8 +216,9 @@ export async function processRefund(
       return { statusCode: 502, body };
     }
 
-    // F3: refunded_fils already includes this refund (reserved in step 1).
-    const now = await current();
+    // F3/F17: the succeeded refunds so far plus this one (its row is inserted below).
+    const before = await current();
+    const now = { ...before, refundedFils: addFils(before.refundedFils, prepared.requestedAmount) };
     const newRefundedTotal = now.refundedFils;
     const newStatus = await setStatus(now);
     // F5: each refund's share is rounded on its own, so the shares can add up
