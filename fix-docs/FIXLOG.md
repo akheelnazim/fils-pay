@@ -119,6 +119,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F15 | `refund_merchant_summary` joined on the wrong id, so it was always empty | `db/migrations/0083_refund_merchant_summary_join.sql` | fixed | `feat(FP-300/F15)` |
 | F10 | Reconciliation's pending figure leaves out refunds, so they show as a gap | `apps/api/src/settlement/query.ts` | fixed | `feat(FP-300/F10)` |
 | F11 | Transaction responses lack `refundedFils` | `apps/api/src/transactions/serialize.ts` | fixed | `feat(FP-300/F11)` |
+| F12 | A full refund of a partial capture stayed `partially_captured` | `apps/api/src/payments/refundState.ts` | fixed | `feat(FP-300/F12)` |
 
 ### Test suite (Q)
 
@@ -715,6 +716,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it breaks: no refunds at all, from the API or the dashboard.
 - Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
 - Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
+
+#### F12 Full refund of a partial capture never says refunded
+- Where: `apps/api/src/payments/refundState.ts`
+- What's wrong: capture 4 000 of a 10 000 authorization, refund all 4 000: the status stayed `partially_captured`.
+- Why: the function returned `partially_captured` for any capture below the authorization before looking at refunds. Its comments claim finance wanted the headroom kept open; the audit and plan state the opposite rule ("a transaction is refunded when every fils we captured went back") and no document in `docs/` records the comment's claim.
+- What it breaks: a fully returned payment looks still open in the dashboard, webhook (`status`) and recompute tool.
+- Fix: when something was captured and `refunded ≥ captured` the status is `refunded`, whatever the authorization; otherwise the old order (partial capture stays `partially_captured`, nothing refunded `captured`, else `partially_refunded`). Comment rewritten. Consequence to know: a `refunded` row can't be captured further (capture accepts only `authorized`/`partially_captured`), so the leftover authorization headroom is released only by expiry. · Proper fix (if different): track "refunded" and "authorization still open" separately instead of one status.
+- Test: `payments/refundState.f12.fix.test.ts` (4 000 of 10 000 refunded in full → refunded; partial returns never refunded; nothing refunded stays partially_captured; full capture unchanged; `processRefund` stores `refunded`). 2 failed before · ADR: none
 
 #### F11 Transaction responses lack refundedFils
 - Where: `apps/api/src/transactions/serialize.ts`, `apps/web/src/types.ts`, `RefundDrawer.tsx`

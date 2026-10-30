@@ -13,9 +13,11 @@ import { ZERO_FILS, compareFils, type Fils } from "@filspay/money";
  */
 
 /**
- * "refunded" means refunded_fils === captured_fils; "partially_refunded"
- * means 0 < refunded_fils < captured_fils. A transaction is never left in a
- * capture status once its full captured amount has been returned.
+ * "refunded" means refunded_fils === captured_fils (all of what was captured,
+ * even if less than the authorization); "partially_refunded" means
+ * 0 < refunded_fils < captured_fils on a fully captured transaction. A
+ * transaction is never left in a capture status once its full captured
+ * amount has been returned.
  */
 export type PostRefundStatus = "captured" | "partially_captured" | "partially_refunded" | "refunded";
 
@@ -27,32 +29,21 @@ export interface PostRefundStatusInput {
   refundedTotalFils: Fils;
 }
 
-// FH: Huda's rule from the finance call (Sep): "a transaction is refunded when every fils we captured
-// went back". this function doesn't follow that for partial captures
+// Finance rule: "a transaction is refunded when every fils we captured went back".
+// A transaction that is only part-captured keeps its capture status until then,
+// so the authorization headroom stays usable while some of it is still out.
 export function nextStatusAfterRefund(input: PostRefundStatusInput): PostRefundStatus {
-  // A refund does not end a transaction's capture lifecycle while there is
-  // still authorization left to draw on. A merchant who captured part of an
-  // order, returned that part, and still holds authorized headroom has an
-  // open authorization: every capture path in the platform gates on the
-  // capture statuses, so moving the row to a refunded status here would
-  // strand that headroom with no way to release it short of a manual write.
-  // The refunded statuses are therefore reserved for transactions whose
-  // authorization is fully consumed; everything else keeps its capture
-  // status and records the return in `refunded_fils`.
-  // FH 21/07/2026: Huda confirmed finance wants headroom kept open here, so
-  // partially_captured is the right answer even after a full refund
-  // am: so capture 4000 on a 10000 auth, refund all 4000, and it still says
-  // partially_captured and can be refunded again?? feels wrong
-  // YA: no, refundValidation stops the second refund since refunded == captured
+  if (
+    compareFils(input.capturedFils, ZERO_FILS) > 0 &&
+    compareFils(input.refundedTotalFils, input.capturedFils) >= 0
+  ) {
+    return "refunded";
+  }
   if (compareFils(input.capturedFils, input.amountFils) < 0) {
     return "partially_captured";
   }
-
   if (compareFils(input.refundedTotalFils, ZERO_FILS) === 0) {
     return "captured";
   }
-  if (compareFils(input.refundedTotalFils, input.capturedFils) < 0) {
-    return "partially_refunded";
-  }
-  return "refunded";
+  return "partially_refunded";
 }
