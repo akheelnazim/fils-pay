@@ -79,6 +79,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html`, `apps/web/src/pages/checkout/CheckoutPage.tsx` | fixed | `fix(X10)` |
 | X11 | Merchant UI root URL renders React Router's unexpected application 404 | `apps/web/src/router.tsx` | fixed | `fix(X11)` |
 | X12 | Merchant analytics accepts impossible dates and can return a database error | `apps/api/src/routes/analytics.ts` | fixed | `fix(X12)` |
+| X13 | A request body that isn't valid JSON gets 500 `internal_error` instead of 400 (every route) | `apps/api/src/plugins/errorHandler.ts` | open | |
 
 ### Deploy and setup (D)
 
