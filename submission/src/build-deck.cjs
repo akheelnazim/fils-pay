@@ -32,14 +32,17 @@ pres.title = "FilsPay Handover - Team LGTM";
 pres.author = "Team LGTM";
 
 pres.defineSlideMaster({
-  title: "COVER", background: { color: K.bg },
+  title: "COVER", background: { path: path.join(__dirname, "bg-cover.png") },
   objects: [{ placeholder: { options: { name: "title", type: "title", x: 0.8, y: 2.0, w: 11.7, h: 1.5, fontSize: 54, bold: true, color: K.text, fontFace: FONT_B, valign: "bottom", align: "left" }, text: "" } },
     { placeholder: { options: { name: "body", type: "body", x: 0.8, y: 3.6, w: 11.7, h: 0.9, fontSize: 22, color: K.muted, valign: "top", align: "left" }, text: "" } }],
 });
 pres.defineSlideMaster({
-  title: "CONTENT", background: { color: K.bg },
+  title: "CONTENT", background: { path: path.join(__dirname, "bg-content.png") },
   objects: [{ placeholder: { options: { name: "title", type: "title", x: 0.6, y: 0.35, w: 12.1, h: 0.9, fontSize: 34, bold: true, color: K.text, fontFace: FONT_B, valign: "middle", align: "left" }, text: "" } },
-    { text: { text: "Team LGTM · FilsPay", options: { x: 0.6, y: 7.0, w: 4, h: 0.3, fontSize: 10, color: "6B7480", fontFace: FONT } } }],
+    // Team mark, top right of every content slide (above the title's text line).
+    { text: { text: "TEAM", options: { x: 10.45, y: 0.14, w: 0.95, h: 0.34, fontSize: 11, bold: true, color: K.muted, align: "right", valign: "middle", charSpacing: 3, fontFace: FONT } } },
+    { text: { text: "LGTM", options: { x: 11.45, y: 0.1, w: 1.4, h: 0.42, fontSize: 20, bold: true, color: K.cyan, align: "left", valign: "middle", charSpacing: 2, fontFace: FONT_B } } },
+    { text: { text: "Team LGTM · FilsPay handover", options: { x: 0.6, y: 7.0, w: 5, h: 0.3, fontSize: 11, bold: true, color: "8A94A1", fontFace: FONT } } }],
   slideNumber: { x: 12.2, y: 7.0, w: 0.6, h: 0.3, fontSize: 10, color: "6B7480", align: "right", fontFace: FONT },
 });
 
@@ -66,7 +69,10 @@ const content = (sec, title) => { const s = pres.addSlide({ masterName: "CONTENT
 pres.addSection({ title: "Pitch" });
 {
   const s = pres.addSlide({ masterName: "COVER", sectionTitle: "Pitch" });
-  pill(s, 0.8, 1.35, 2.6, "TEAM LGTM", K.cyanSoft, 0.42);
+  // Large, faint wordmark behind the right side.
+  T(s, "LGTM", { x: 5.2, y: 0.4, w: 7.9, h: 2.6, fontSize: 150, bold: true, color: K.blue, transparency: 86, align: "right", valign: "middle", fontFace: FONT_B, wrap: false });
+  T(s, [{ text: "TEAM ", options: { color: K.muted, fontSize: 20, bold: true } }, { text: "LGTM", options: { color: K.cyan, fontSize: 40, bold: true, fontFace: FONT_B } }],
+    { x: 0.8, y: 1.0, w: 6, h: 0.8, valign: "bottom", charSpacing: 2 });
   s.addText("FilsPay Handover", { placeholder: "title" });
   s.addText("Audit, fix and finish a Bahrain card-payments platform, with an AI harness", { placeholder: "body" });
   [["109", "findings confirmed"], ["88", "fixed, test-first"], ["22", "refund gaps closed"]].forEach(([v, l], i) => {
@@ -81,19 +87,19 @@ pres.addSection({ title: "Pitch" });
 {
   const s = content("Pitch", "Team LGTM");
   const people = [
-    ["AN", "Akheel Nazim", ["Auditing", "Finding the repo's traps", "AI workflow design", "Fixes"]],
-    ["AK", "Ahmed Khalaf", ["Fixes", "Deployment", "Load testing", "UI fixes"]],
+    ["AN", "Akheel Nazim", ["Auditing", "Planted traps", "AI workflow design", "Fixes"]],
+    ["AK", "Ahmed Khalaf", ["Fixes", "Commit history audit", "Deployment", "Load testing", "UI fixes"]],
   ];
   people.forEach(([ini, name, owned], i) => {
     const x = 0.6 + i * 6.15;
     const c = i ? K.cyanSoft : K.blue;
-    card(s, x, 1.5, 5.95, 4.1);
+    card(s, x, 1.5, 5.95, 4.55);
     ring(s, x + 0.45, 1.9, 1.2, ini, c, 24);
     T(s, name, { x: x + 1.95, y: 2.05, w: 3.8, h: 0.55, fontSize: 26, bold: true, fontFace: FONT_B });
     T(s, "Owned", { x: x + 1.95, y: 2.6, w: 3.8, h: 0.4, fontSize: 14, color: K.muted });
-    owned.forEach((o, j) => pill(s, x + 0.45 + (j % 2) * 2.6, 3.6 + Math.floor(j / 2) * 0.85, 2.45, o, c, 0.6));
+    owned.forEach((o, j) => pill(s, x + 0.45 + (j % 2) * 2.6, 3.45 + Math.floor(j / 2) * 0.8, 2.45, o, c, 0.6));
   });
-  T(s, "Plus Claude Code: Opus for fixes, Haiku for failing tests, Sonnet as reviewer", { x: 0.6, y: 6.2, w: 12, h: 0.45, fontSize: 15, italic: true, color: K.muted });
+  T(s, "Plus Claude Code: Opus for fixes, Haiku for failing tests, Sonnet as reviewer", { x: 0.6, y: 6.3, w: 12, h: 0.45, fontSize: 15, italic: true, color: K.muted });
 }
 
 // ---------- Root cause ----------
@@ -184,35 +190,10 @@ pres.addSection({ title: "Pitch" });
   T(s, "Every entry: symptom, cause, fix, test, data effect in fix-docs/FIXLOG.md", { x: 0.6, y: 6.5, w: 12, h: 0.35, fontSize: 13, italic: true, color: K.muted });
 }
 
-// ---------- Final security scan ----------
-{
-  const s = content("Pitch", "Final security scan: we checked our own work");
-  T(s, "After FP-300 we re-scanned the whole repo for security holes. 7 new issues: 1 fixed, 1 partly fixed, 5 open with fixes proposed.", { x: 0.6, y: 1.3, w: 12.1, h: 0.6, fontSize: 16, color: K.muted });
-  const items = [
-    ["S13", "Cross-merchant transaction read via report filter", "Fixed", K.green],
-    ["S19", "Unauthenticated summary; disabled admins kept impersonation", "Partly fixed", K.amber],
-    ["S14", "SSRF through webhook URLs", "Open · high", K.red],
-    ["S15", "Compose runs in dev mode; secret and .git in image", "Open · high", K.red],
-    ["S16", "OTP limit resets per login; no rate limits", "Open", K.red],
-    ["S17", "Unlimited card testing on the pay endpoint", "Open", K.red],
-    ["S18", "Unsalted hash of card number and CVV stored", "Open", K.red],
-  ];
-  items.forEach(([id, t, st, c], i) => {
-    const col = i < 4 ? 0 : 1, row = i < 4 ? i : i - 4;
-    const x = 0.6 + col * 6.15, y = 2.1 + row * 1.15;
-    card(s, x, y, 5.95, 1.0);
-    T(s, id, { x: x + 0.25, y, w: 0.8, h: 1.0, valign: "middle", fontSize: 18, bold: true, color: c, fontFace: FONT_B });
-    T(s, t, { x: x + 1.1, y, w: 3.0, h: 1.0, valign: "middle", fontSize: 14 });
-    pill(s, x + 4.2, y + 0.31, 1.55, st, c, 0.38);
-  });
-  card(s, 6.75, 5.55, 5.95, 0.95, K.card2, K.cyanSoft);
-  T(s, "Next: S14 and S15 before real traffic", { x: 7.0, y: 5.55, w: 5.5, h: 0.95, valign: "middle", fontSize: 16, bold: true, color: K.cyanSoft });
-}
-
 // ---------- Live demo ----------
 {
   const s = content("Pitch", "Live demo: a partial and a full refund, end to end");
-  const flow = [["Capture", "10.000 BD"], ["Partial refund", "3.000 BD"], ["Full refund", "remaining 7.000 BD"], ["Dashboard", "refunded, 10.000 back"], ["Settlement report", "payout reduced, gap 0"]];
+  const flow = [["Captured", "389.030 BHD"], ["Partial refund", "100.000 BHD"], ["Full refund", "remaining 289.030 BHD"], ["Dashboard", "status refunded"], ["Reconciliation", "no gap"]];
   flow.forEach(([h, b], i) => {
     const x = 0.6 + i * 2.45;
     card(s, x, 1.45, 2.1, 1.4);
@@ -220,30 +201,49 @@ pres.addSection({ title: "Pitch" });
     T(s, b, { x: x + 0.1, y: 2.15, w: 1.9, h: 0.55, fontSize: 13, color: K.cyan, align: "center", valign: "middle" });
     if (i < flow.length - 1) arrowR(s, x + 2.12, 2.01, 0.3);
   });
-  ph(s, 0.6, 3.15, 3.9, 3.0, "[Screenshot: refund drawer on the transaction]");
-  ph(s, 4.7, 3.15, 3.9, 3.0, "[Screenshot: dashboard after full refund]");
-  ph(s, 8.8, 3.15, 3.9, 3.0, "[Screenshot: settlement / reconciliation report]");
-  T(s, "Live: merchant.139-59-92-10.sslip.io · admin.139-59-92-10.sslip.io · api.139-59-92-10.sslip.io", { x: 0.6, y: 6.35, w: 12.1, h: 0.4, fontSize: 13, color: K.muted });
-  s.addNotes("Backup screenshots in case the live demo fails. Fee reversed in full (250 fils), two refund.succeeded webhooks with valid signatures.");
+  // Backup screenshots, captured on the live deployment on 30 Oct (submission/LGTM_FilsPay_live_refund_flow.gif).
+  const shots = [
+    ["1-refund-drawer.jpg", "Drawer caps the refund at what's left: 389.030 BHD"],
+    ["4-refunded.jpg", "100.000 then 289.030 BHD back: status refunded"],
+    ["5-reconciliation.jpg", "Reconciliation after the refunds: no gap"],
+  ];
+  shots.forEach(([f, cap], i) => {
+    const x = 0.6 + i * 4.1;
+    card(s, x, 3.1, 3.9, 2.95);
+    s.addImage({ path: path.join(__dirname, "demo", f), x: x + 0.1, y: 3.2, w: 3.7, h: 1.665, objectName: nm(), altText: cap });
+    T(s, cap, { x: x + 0.2, y: 5.0, w: 3.5, h: 0.9, fontSize: 14, valign: "middle" });
+  });
+  T(s, "Recorded live on merchant.139-59-92-10.sslip.io (transaction delta-wholesale-txn-0021) · full recording: LGTM_FilsPay_live_refund_flow.gif", { x: 0.6, y: 6.3, w: 12.1, h: 0.45, fontSize: 13, color: K.muted });
+  s.addNotes("Backup screenshots from the live site in case the live demo fails. Use a different captured payment for the live demo: txn-0021 is already fully refunded.");
 }
 
 // ---------- Under load ----------
+// Numbers from loadtest/summary-*.json (see loadtest-chart.cjs); wording matches report section 3.
 {
   const s = content("Pitch", "Under load");
-  s.addImage({ path: path.join(__dirname, "loadtest.png"), x: 0.6, y: 1.45, w: 7.4, h: 4.16, objectName: nm(), altText: "Load test results: 200 VUs, 123.4 req/s, 0% errors, 128MB peak memory" });
-  card(s, 8.3, 1.45, 4.4, 2.2);
-  T(s, "Simulated users", { x: 8.6, y: 1.6, w: 3.8, h: 0.4, fontSize: 15, bold: true, color: K.muted });
-  T(s, "Estimated", { x: 8.6, y: 2.05, w: 1.9, h: 0.35, fontSize: 13, color: K.muted });
-  T(s, "Measured", { x: 10.6, y: 2.05, w: 1.9, h: 0.35, fontSize: 13, color: K.muted });
-  T(s, "28", { x: 8.6, y: 2.45, w: 1.9, h: 0.9, fontSize: 36, bold: true, color: K.cyan });
-  T(s, "200", { x: 10.6, y: 2.45, w: 1.9, h: 0.9, fontSize: 36, bold: true, color: K.green });
-  card(s, 8.3, 3.85, 4.4, 2.6);
+  s.addImage({ path: path.join(__dirname, "architecture-dark-topology.png"), x: 0.6, y: 1.3, w: 12.1, h: 2.65, objectName: nm(), altText: "Architecture: Caddy is the only internet-facing service; merchant, admin and API sit behind it on loopback ports; settlement, reporting and migration are internal; PostgreSQL is external" });
+  // Estimated vs measured
+  card(s, 0.6, 4.2, 3.8, 2.45);
+  T(s, "Simulated users", { x: 0.9, y: 4.35, w: 3.3, h: 0.4, fontSize: 15, bold: true, color: K.muted });
+  T(s, "28", { x: 0.9, y: 4.85, w: 1.6, h: 0.8, fontSize: 40, bold: true, color: K.text, fontFace: FONT_B });
+  T(s, "estimated (FP-209)", { x: 0.9, y: 5.7, w: 1.7, h: 0.6, fontSize: 13, color: K.muted, valign: "top" });
+  T(s, "200", { x: 2.6, y: 4.85, w: 1.7, h: 0.8, fontSize: 40, bold: true, color: K.cyan, fontFace: FONT_B });
+  T(s, "measured, 0 errors", { x: 2.6, y: 5.7, w: 1.7, h: 0.6, fontSize: 13, color: K.muted, valign: "top" });
+  // Measured results
+  card(s, 4.6, 4.2, 3.9, 2.45);
+  T(s, "At 200 users (k6, live API)", { x: 4.9, y: 4.35, w: 3.4, h: 0.4, fontSize: 15, bold: true, color: K.muted });
   T(s, [
-    { text: "Bottleneck: ", options: { bold: true } }, { text: "DB pool queuing; RAM stayed 128 MB (limit 512)", options: { color: K.cyanSoft, breakLine: true } },
-    { text: "Overload: ", options: { bold: true } }, { text: "Queued cleanly; 0% error rate across 19.6k reqs", options: { color: K.cyanSoft, breakLine: true } },
-    { text: "Recovery: ", options: { bold: true } }, { text: "Immediate (<2s) return to 204ms baseline latency", options: { color: K.green } },
-  ], { x: 8.6, y: 4.0, w: 3.9, h: 2.3, fontSize: 15, valign: "top", paraSpaceAfter: 10 });
-  T(s, "Already fixed for load: streamed CSV export (X3). Known: missing ledger indexes (P2), no rate limiting (S16, S17).", { x: 0.6, y: 5.85, w: 7.4, h: 0.7, fontSize: 13, color: K.muted });
+    { text: "123.4", options: { bold: true, color: K.cyan, fontSize: 22 } }, { text: " req/s", options: { color: K.muted, breakLine: true } },
+    { text: "1.38 s", options: { bold: true, color: K.cyan, fontSize: 22 } }, { text: " p95 latency", options: { color: K.muted, breakLine: true } },
+    { text: "0 of 19,610", options: { bold: true, color: K.green, fontSize: 22 } }, { text: " requests failed", options: { color: K.muted } },
+  ], { x: 4.9, y: 4.8, w: 3.4, h: 1.75, fontSize: 15, valign: "top", paraSpaceAfter: 4 });
+  // How it behaves
+  card(s, 8.7, 4.2, 4.0, 2.45);
+  T(s, [
+    { text: "Bottleneck: ", options: { bold: true } }, { text: "the database; requests wait on unindexed scans (P2)", options: { color: K.muted, breakLine: true } },
+    { text: "Overload: ", options: { bold: true } }, { text: "no rate limits yet, so load queues instead of failing", options: { color: K.muted, breakLine: true } },
+    { text: "Recovery: ", options: { bold: true } }, { text: "back to ~204 ms at 10 users, no restarts", options: { color: K.muted } },
+  ], { x: 9.0, y: 4.35, w: 3.5, h: 2.2, fontSize: 14, valign: "top", paraSpaceAfter: 8 });
 }
 
 // ---------- How we used AI: the cycle ----------
@@ -322,15 +322,16 @@ pres.addSection({ title: "Pitch" });
     "Rotate the leaked acquirer secret (S11)",
     "March sweep production postings (X14)",
     "16 more recorded items, mostly dependencies and performance",
-    "Deploy & load test: Live on Dilmune Cloud, 200 VUs verified, 0% errors, 128 MB peak RAM",
+    "Demo shows OTP codes on the login screens: demo data only",
   ]);
 }
 
 // ---------- Thank you ----------
 {
   const s = pres.addSlide({ masterName: "COVER", sectionTitle: "Pitch" });
+  T(s, "LGTM", { x: 5.2, y: 0.4, w: 7.9, h: 2.6, fontSize: 150, bold: true, color: K.blue, transparency: 86, align: "right", valign: "middle", fontFace: FONT_B, wrap: false });
   s.addText("Thank you", { placeholder: "title" });
-  s.addText("Team LGTM · Akheel Nazim · Ahmed Khalaf", { placeholder: "body" });
+  s.addText([{ text: "Team ", options: { color: K.muted } }, { text: "LGTM", options: { color: K.cyan, bold: true } }, { text: " · Akheel Nazim · Ahmed Khalaf", options: { color: K.muted } }], { placeholder: "body" });
   const links = [["Merchant + checkout", "merchant.139-59-92-10.sslip.io"], ["Admin console", "admin.139-59-92-10.sslip.io"], ["API", "api.139-59-92-10.sslip.io"], ["Code", "github.com/akheelnazim/fils-pay"]];
   links.forEach(([l, u], i) => {
     const x = 0.8 + (i % 2) * 6.0, y = 4.85 + Math.floor(i / 2) * 0.85;
@@ -347,6 +348,27 @@ pres.addSection({ title: "Appendix" });
   s.addText("Appendix", { placeholder: "title" });
   s.addText("Not presented. Full detail in LGTM_FilsPay_Submission.pdf and fix-docs/FIXLOG.md", { placeholder: "body" });
 }
+// ---------- Live demo backup: every step ----------
+{
+  const s = content("Appendix", "Live demo backup: every step, on the deployed site");
+  const steps = [
+    ["1-refund-drawer.jpg", "1. Refund drawer: 389.030 BHD refundable"],
+    ["2-partially-refunded.jpg", "2. Refund 100.000 BHD: partially_refunded"],
+    ["3-drawer-remaining.jpg", "3. Drawer now caps it at 289.030 BHD"],
+    ["4-refunded.jpg", "4. Blank amount refunds the rest: refunded"],
+    ["5-reconciliation.jpg", "5. Reconciliation: gap 0.000 BHD"],
+  ];
+  steps.forEach(([f, cap], i) => {
+    const row = i < 3 ? 0 : 1;
+    const x = row === 0 ? 0.6 + i * 4.1 : 2.65 + (i - 3) * 4.1;
+    const y = row === 0 ? 1.4 : 4.15;
+    card(s, x, y, 3.9, 2.55);
+    s.addImage({ path: path.join(__dirname, "demo", f), x: x + 0.1, y: y + 0.1, w: 3.7, h: 1.665, objectName: nm(), altText: cap });
+    T(s, cap, { x: x + 0.2, y: y + 1.85, w: 3.5, h: 0.6, fontSize: 14, valign: "middle", color: i === 4 ? K.cyan : K.text });
+  });
+  s.addNotes("Recorded 30 Oct on merchant.139-59-92-10.sslip.io, transaction delta-wholesale-txn-0021. Present live first; come back here only if the live demo fails.");
+}
+
 {
   const s = content("Appendix", "Proof: tests, migrations, end-to-end refund");
   card(s, 0.6, 1.45, 5.95, 5.2);
@@ -357,11 +379,19 @@ pres.addSection({ title: "Appendix" });
     { text: "4 reporting tests: polluted shared DB, consumer stalled (Q2, X6)", options: { bullet: true, breakLine: true } },
     { text: "End-to-end refund test: ledger balances, full fee reversed, signed webhooks, reconciliation gap 0", options: { bullet: true } },
   ], { x: 0.9, y: 2.2, w: 5.4, h: 3.0, fontSize: 15, valign: "top", paraSpaceAfter: 8, color: K.muted });
-  ph(s, 0.9, 5.25, 5.35, 1.2, "[Final test output summary]");
+  card(s, 0.9, 5.25, 5.35, 1.2, K.card2, K.green);
+  T(s, [{ text: "Now: 669 / 669 TypeScript tests pass", options: { bold: true, color: K.green, breakLine: true } },
+    { text: "API 578 · money 40 · reporting 18 · web 12 · scripts 16 · Go 8/8 packages", options: { color: K.muted } }],
+    { x: 1.1, y: 5.3, w: 5.0, h: 1.1, fontSize: 13, valign: "middle" });
   card(s, 6.75, 1.45, 5.95, 5.2);
   T(s, "12 new migrations (0073–0084)", { x: 7.05, y: 1.6, w: 5.4, h: 0.5, fontSize: 17, bold: true });
   T(s, "BIGINT money columns (M5, M6) · unique indexes against duplicates (R2, R3, R5) · reporting dead letters (X6) · ADR-0005 renumbering (D1) · integer scheme export (M16) · capture marker (R6) · refund columns, view and pending rows (F9, F15, F22)", { x: 7.05, y: 2.2, w: 5.4, h: 2.6, fontSize: 15, color: K.muted, valign: "top" });
-  s.addImage({ path: path.join(__dirname, "loadtest.png"), x: 7.05, y: 5.25, w: 5.35, h: 1.2, objectName: nm() });
+}
+
+// ---------- Appendix: load test chart ----------
+{
+  const s = content("Appendix", "Load test results");
+  s.addImage({ path: path.join(__dirname, "loadtest-dark.png"), x: 1.7, y: 1.3, w: 9.95, h: 5.6, objectName: nm(), altText: "Load test: 200 peak users, 123.4 req/s, p95 1.38 s, 0 of 19,610 requests failed; latency by run and by endpoint" });
 }
 
 const out = process.env.DECK_OUT || path.join(__dirname, "..", "LGTM_FilsPay_Slides.pptx");

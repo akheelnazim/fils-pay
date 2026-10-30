@@ -90,8 +90,8 @@ children.push(
   new Paragraph({ spacing: { after: 600 }, children: [new TextRun({ text: "Submission document · Team LGTM", size: 32, color: "3B4D5C" })] }),
   H2("Team"),
   table(["Member", "Owned"], [
-    ["Akheel Nazim", "Auditing, finding the repo's planted traps, designing the AI workflow, fixes"],
-    ["Ahmed Khalaf", "Fixes, deployment, load testing, UI fixes"],
+    ["Akheel Nazim", "Auditing, the planted traps, designing the AI workflow, fixes"],
+    ["Ahmed Khalaf", "Fixes, auditing the commit history, deployment, load testing, UI fixes"],
   ], [3000, CW - 3000]),
   gap(),
   H2("Live URLs"),
@@ -121,64 +121,65 @@ children.push(
   P("**Main root cause.** FilsPay's safeguards lived in documents, comments and postmortems instead of in the code and the database. The ADRs required integer fils, but TypeScript and Go each rewrote money maths with floats and cents. Postmortems marked unique indexes and locks as \"done\" that were never built. Tenant checks sat on the route but not on the query. The repo's own AI instruction files were planted with false rules. Most findings trace back to a rule that was written down but never enforced."),
 );
 
-// 2. Architecture
+// 2. Architecture (sources: submission/architecture-deployment.md, ops/compose.server.yml)
 children.push(
   H1("2. Architecture and deployment"),
+  P("FilsPay runs as one Docker Compose project on our Dilmune Cloud server (139.59.92.10). Caddy is the only internet-facing service; PostgreSQL is an existing database outside the Compose stack. Full write-up: `submission/architecture-deployment.md`."),
   H2("Services and ports"),
-  new Paragraph({ children: [new ImageRun({ type: "png", data: fs.readFileSync(path.join(__dirname, "architecture.png")), transformation: { width: 620, height: 349 } })], spacing: { after: 120 } }),
-  table(["Service", "Port", "Faces the internet?", "Notes"], [
-    ["apps/web (checkout + merchant dashboard)", "5173 (dev); merchant.139-59-92-10.sslip.io", "Yes, through the proxy", "Static React build"],
-    ["apps/admin (ops console)", "5174 (dev); admin.139-59-92-10.sslip.io", "Yes, through the proxy", "Staff only"],
-    ["apps/api (Fastify)", "3000; api.139-59-92-10.sslip.io", "Yes, through the proxy", "`/healthz`, `/readyz`"],
-    ["apps/settlement (Go daemon)", "8091 internal API", "No", "Called by the API with an internal token"],
-    ["apps/reporting (worker)", "none", "No", "Reads the outbox"],
-    ["PostgreSQL 16", "5432", "No (must not be published)", "One database"],
-  ], [2900, 1800, 2100, CW - 6800]),
+  new Paragraph({ children: [new ImageRun({ type: "png", data: fs.readFileSync(path.join(__dirname, "architecture.png")), transformation: { width: 620, height: 248 } })], spacing: { after: 120 } }),
+  table(["Service", "Ports", "Faces the internet?", "Notes"], [
+    ["Caddy reverse proxy", "Host 80 and 443", "Yes", "Routes the three hostnames, manages HTTPS certificates; admin port 2019 not published"],
+    ["Merchant UI + checkout (apps/web)", "Container 80; host 127.0.0.1:5173", "Through Caddy", "merchant.139-59-92-10.sslip.io"],
+    ["Admin UI (apps/admin)", "Container 80; host 127.0.0.1:5174", "Through Caddy", "admin.139-59-92-10.sslip.io"],
+    ["API (apps/api, Fastify)", "Container 3000; host 127.0.0.1:3000", "Through Caddy", "api.139-59-92-10.sslip.io, `/healthz`, `/readyz`"],
+    ["Settlement (Go daemon)", "8091, Compose network only", "No", "Called by the API with an internal token"],
+    ["Reporting worker", "None", "No", "Consumes outbox events"],
+    ["Migrate job", "None; runs once and exits", "No", "Applies pending migrations before the services start"],
+    ["PostgreSQL", "External; from `DATABASE_URL`", "No (restrict to trusted clients)", "Persistent data"],
+  ], [2700, 2500, 1700, CW - 6900]),
   gap(),
   H2("Redeploy"),
-  P("The stack is defined in `ops/docker-compose.yml`, with Dockerfiles we added in fix D5. Locally it runs with:"),
-  ...Code(["docker compose -f ops/docker-compose.yml up -d --build", "docker compose -f ops/docker-compose.yml run --rm migrate"]),
-  PH("The one command used on the deployment server, e.g. a deploy script or CI job, and where it lives in the repo"),
+  P("Compose is the infrastructure as code (`ops/compose.server.yml`). From a clean release directory holding the source and the protected `ops/.env.server`:"),
+  ...Code(["docker compose -p ops --env-file ops/.env.server -f ops/compose.server.yml up -d --build"]),
+  P("The live release is commit `d0f631d` (directory `~/filspay-releases/d0f631d`). Each release gets its own clean directory with the same project name `ops`, so volumes carry over. The command does not copy source to the server or provision PostgreSQL. Step-by-step: `ops/DEPLOY.md`."),
   H2("Where secrets come from"),
-  B("Secrets are no longer committed (fix S11): `ops/.env.docker` is ignored, and `ops/.env.docker.example` lists every setting with placeholders."),
-  B("Required in production: `WEBHOOK_SECRET_ENCRYPTION_KEY` (32 bytes), `ACQUIRER_CALLBACK_SIGNING_SECRET`, `SETTLEMENT_INTERNAL_TOKEN`, `DATABASE_URL`, `CORS_ORIGINS`."),
-  B("On the server they come from an env file with restricted permissions, outside the repo."),
-  B("Known gap: compose has no `env_file`, so `.env.docker` is not loaded automatically (noted under D4 and scan item S15)."),
+  B("A private env file on the server, `ops/.env.server`, with restricted permissions, passed to Compose with `--env-file` and ignored by Git. `ops/server.env.example` is the template with placeholders only."),
+  B("It holds `DATABASE_URL`, `SETTLEMENT_INTERNAL_TOKEN` and `WEBHOOK_SECRET_ENCRYPTION_KEY` (both generated by the operator) and the acquirer callback signing secret. The webhook key must stay stable and backed up: losing it means stored webhook secrets can't be decrypted."),
+  B("No secrets are committed any more (fix S11); the old acquirer secret is still in git history and must be rotated."),
   H2("Health checks and restart policies"),
-  B("Postgres: `pg_isready` health check in compose; every service waits for it."),
-  B("API: `GET /healthz` (liveness, no database) and `GET /readyz` (readiness)."),
-  B("[[Restart policy per service on the server, e.g. restart: unless-stopped]]"),
-  B("[[Health check wired into the proxy / platform]]"),
+  B("API: Docker health check calls `/healthz`. `/readyz` reports whether the database connected at startup (it does not detect a later outage)."),
+  B("Merchant and admin UIs: health check fetches their local root page. Settlement and reporting have no HTTP check; we watch container state and logs."),
+  B("Caddy, API, both UIs, settlement and reporting: `restart: unless-stopped`. The migrate job: `restart: no`. Docker does not restart a container only because it reports unhealthy."),
+  B("Volumes: KYC uploads (`kyc_data`) and Caddy certificate data (`caddy_data`). We back these up with the database and the webhook encryption key."),
   H2("Redeploying without interrupting a settlement run"),
-  B("The daemon stops cleanly on SIGTERM (`signal.NotifyContext` in `cmd/settlement/main.go`), and its internal server allows a long shutdown grace so a batch close isn't cut off."),
-  B("A batch close is one database transaction: if it is stopped, it rolls back. Re-closing a closed batch is a no-op (F8), and `settlement.paid` events have a unique index (R3), so a rerun after a redeploy can't double-pay or double-notify."),
-  B("Run exactly one settlement daemon. The close is due at 00:15 Asia/Bahrain (fixed in T1), so avoid deploying between 00:00 and 00:30 Bahrain time."),
-  B("[[Deployment procedure actually used: e.g. redeploy api/web/admin first, then settlement outside the close window; how you checked no close was running]]"),
+  B("Changes that don't touch settlement or the schema leave settlement running and rebuild only the other services:"),
+  ...Code(["docker compose -p ops --env-file ops/.env.server -f ops/compose.server.yml up -d --build --no-deps api merchant admin reporting"]),
+  B("Settlement or schema changes go in a maintenance window: confirm no scheduled or manual run is in progress, back up the database, then deploy. The close is due at 00:15 Asia/Bahrain (fixed in T1), so we avoid 00:00–00:30. There is no automatic drain, so this is an operational check, not a guarantee."),
+  B("If a run is stopped anyway: the daemon shuts down on SIGTERM, each batch close is its own transaction and rolls back if cut off, re-closing a closed batch is a no-op (F8), and `settlement.paid` has a unique index (R3), so a rerun can't double-pay or double-notify. A multi-merchant run is not one transaction, and after restart the daemon retries only the most recent business day; older missed days need a backfill."),
+  B("The `d0f631d` deployment used a short maintenance window, a verified database backup taken before migrating, and migration 0084."),
 );
 
-// 3. Capacity
+// 3. Capacity (numbers computed from loadtest/summary-fp209.json and summary-ramp.json)
 children.push(
   H1("3. Capacity"),
-  P("Capacity and performance were verified with automated k6 benchmarks executed directly against our live production deployment on Dilmune Cloud (`https://api.139-59-92-10.sslip.io`), targeting the historical 60-day dataset of Delta Wholesale Traders (1,200 captured orders totaling 1.21M BD)."),
+  P("We load-tested the live API (`https://api.139-59-92-10.sslip.io`) with k6 on 30 Oct, using Delta Wholesale Traders' 60-day history (1,200 captured orders, 1.21M BD)."),
   H2("Estimate on the fixed scenario"),
-  P("Based on the baseline scenario from FP-209 (`docs/perf/fp-209-loadtest-2026-09.md`), the fixed capacity target was estimated at **28 concurrent simulated users** (3 on streaming CSV export, 20 on paginated transaction listing, and 5 on settlement summary) producing ~50 requests/s on the 0.5 vCPU / 512 MB container profile without memory exhaustion."),
+  P("**28 simulated users**, from the FP-209 baseline (`docs/perf/fp-209-loadtest-2026-09.md`): 20 on paged transaction listing, 5 on settlement summary and 3 on CSV export, on the 0.5 vCPU / 512 MB API container that scenario targets."),
   H2("Our load test"),
   table(["Item", "Value"], [
-    ["Tool", "k6 v2.3.0 (containerized runner)"],
-    ["Method", "Two suites: (1) FP-209 baseline replication (30 concurrent VUs over 60s); (2) Capacity ramp-up stress test scaling from 25 to 200 VUs across listing, settlement summary, streaming CSV export (X3), and checkout token lookups."],
-    ["Results", "Baseline (30 VUs): 60.0 req/s, p50 233.0 ms, p95 427.5 ms, 0.00% errors (4,033 / 4,033 passed). CSV export p50: 692 ms, p95: 1.09 s.\nRamp (up to 200 VUs): 123.4 req/s (peak 180 req/s), p50 478.9 ms, p95 1,376.9 ms, max 3,561 ms, 0.00% error rate across 15,577 requests (317.5 MB data transferred)."],
-    ["Estimated vs measured", "28 estimated simulated users vs 200 measured simulated users (7.1x higher capacity served with zero failed requests)."],
+    ["Tool", "k6 (grafana/k6 container). Scripts: `loadtest/loadtest-fp209.js`, `loadtest/loadtest-ramp.js`. Raw results: `loadtest/summary-fp209.json`, `summary-ramp.json`."],
+    ["Method", "(1) FP-209 replication: 30 users for 60 s. (2) Ramp: 25 → 60 → 120 → 200 users in 30 s steps after a 15 s warm-up, then 10 users for 20 s to watch recovery. Mix: transaction list, settlement summary, streamed CSV export (X3) and checkout link lookup."],
+    ["Results", "30 users: 4,033 requests at 60.0 req/s, p50 233 ms, p95 428 ms, 0 failed. Ramp to 200 users: 15,577 requests at 123.4 req/s, p50 479 ms, p95 1.38 s, max 3.56 s, 0 failed. Every k6 status check passed in both runs."],
+    ["Estimated vs measured", "28 estimated vs 200 measured simulated users, with 0 of 19,610 requests failed."],
   ], [2600, CW - 2600]),
   gap(),
-  new Paragraph({ children: [new ImageRun({ type: "png", data: fs.readFileSync(path.join(__dirname, "loadtest.png")), transformation: { width: 620, height: 336 } })], spacing: { after: 120 } }),
+  new Paragraph({ children: [new ImageRun({ type: "png", data: fs.readFileSync(path.join(__dirname, "loadtest-light.png")), transformation: { width: 620, height: 349 } })], spacing: { after: 120 } }),
   H2("Where the bottleneck is"),
-  P("Comparing our measurements against the architecture:"),
-  B("Container memory: The API ran under 512 MB container limits. Thanks to streaming CSV export (fix X3), RSS memory peaked at just **128 MB** under continuous parallel downloads (well under the 512 MB ceiling), confirming OOM kills are eliminated."),
-  B("CPU utilization: Peaked at 41.9% on the API container and 18.7% on Caddy reverse proxy at 200 concurrent users."),
-  B("The primary measured bottleneck is **database connection pool contention and sequential scan latency** (P2). Under 200 concurrent users, latency increased from 233 ms to 1.38 s as requests queued for database connection acquisition, rather than compute or memory exhaustion."),
+  B("Users went up 6.7× (30 → 200) but throughput only 2× (60 → 123 req/s), while p95 went from 428 ms to 1.38 s and nothing failed. Requests are waiting, not failing."),
+  B("The wait is in the database: the list and summary queries scan tables without the indexes recorded as P2, and all services share one connection budget. CSV export is the slowest call (p95 1.10 s at 30 users) but stays memory-safe because it now streams (X3)."),
+  B("Observed on the server during the run (not part of the k6 output): API memory peaked at 128 MB of its 512 MB limit; CPU peaked at 41.9% on the API and 18.7% on Caddy."),
   H2("Turning away excess load and recovering"),
-  P("Throughout the stress test up to 200 concurrent users (15,577 requests), Fastify and Caddy queued incoming traffic cleanly: **0 requests dropped, 0 error responses (0.00% error rate)**."),
-  P("Following the peak 200 VU saturation, traffic stepped down to 10 VUs: the API demonstrated **instant recovery within 2 seconds**, returning immediately to the 204 ms baseline latency with no leaked connections, stalled event loops, or container restarts."),
+  P("Nothing rate-limits requests yet (S16, S17), so the stack queues excess load instead of refusing it: latency rises, but no request failed and no 429 or 5xx was returned in 19,610 requests. In the ramp's last stage (10 users) latency was observed back at about 204 ms, with no container restarts. Before more load we'd add rate limits at Caddy or Fastify and the P2 indexes."),
 );
 
 // 4. Findings report
@@ -236,7 +237,8 @@ const DEC = [
   ["Final-scan findings not fixed", "Found at the end; each needs the full test-first workflow.", "Fix S14 (SSRF) and S15 (compose in dev mode) before real traffic.", "Open (18)"],
   ["Payment-link recovery lookups are in-memory (R8)", "The acquirer simulator keeps no durable record.", "A real acquirer inquiry API or a stored record.", "Open"],
   ["Refund summary view isn't refreshed automatically (F15)", "Nothing in the code refreshes it, despite its comment.", "Refresh from the reporting worker.", "Open"],
-  ["Deployment and load test", "Live on Dilmune Cloud (139.59.92.10) with automated HTTPS via Caddy proxy. Load test verified 200 simulated users at 123 req/s with 0% errors; peak memory 128 MB (limit 512 MB).", "Rate-limiting plugin on public endpoints (S16, S17) and indexes on ledger/events (P2) before scaling further.", "Closed"],
+  ["Deployment and load test", "Live on Dilmune Cloud behind Caddy (HTTPS). k6: 200 simulated users at 123.4 req/s, 0 of 19,610 requests failed.", "Rate limits (S16, S17) and the P2 indexes before more load.", "Closed"],
+  ["Demo configuration shows OTP codes on the login screens", "OTP delivery is a stub in the demo, so codes are displayed to make sign-in possible. This removes the second factor.", "Use demo data only; switch `OTP_DEV_EXPOSE` off and add a real sender before real users.", "Open"],
 ];
 children.push(
   H2(`4.${F.length + 3} Decisions and open risks`),
@@ -245,19 +247,30 @@ children.push(
 
 // 5. UI/UX
 const UI = [
-  ["Refund drawer restored on the transaction page (F6, F11, F22)", "Merchants had no way to refund. The drawer now caps the amount at captured − refunded − pending and shows API errors."],
-  ["Reconciliation page no longer crashes on a negative gap (X9)", "A negative gap is valid; the page threw and showed nothing."],
-  ["Dashboard tab titled \"FilsPay Dashboard\" (X10)", "Every page was labelled \"FilsPay Checkout\" in tabs and history."],
-  ["Merchant UI root URL redirects to the dashboard (X11)", "Opening the base URL showed React Router's developer 404 screen."],
-  ["Checkout explains an uncertain or lost payment (R1, R6)", "A buyer who was charged but lost the reservation now sees \"charged, contact the merchant\" instead of a retry prompt that could charge them twice."],
-  ["Staff console shows the fee rate actually charged (M7)", "It showed 245 bps while 225 bps was billed."],
+  ["Merchant and admin portals restyled", "The sign-in screens and portal pages looked unfinished. Both portals now share a cleaner layout, spacing and type.", null, ["merchant", "admin"]],
+  ["Refund drawer restored on the transaction page (F6, F11, F22)", "Merchants had no way to refund. The drawer caps the amount at captured − refunded − pending and shows API errors.", "`routes/refunds.fix.test.ts`, `transactions/serialize.f11.fix.test.ts`, and the live recording below"],
+  ["Reconciliation page no longer crashes on a negative gap (X9)", "A negative gap is valid; the page threw and showed nothing.", "`apps/web/src/format.x9.fix.test.ts`"],
+  ["Dashboard tab titled \"FilsPay Dashboard\" (X10)", "Every page was labelled \"FilsPay Checkout\" in tabs and history.", "`apps/web/src/documentTitle.x10.fix.test.ts`"],
+  ["Merchant UI root URL redirects to the dashboard (X11)", "Opening the base URL showed React Router's developer 404 screen.", "`apps/web/src/router.x11.fix.test.ts`"],
+  ["Checkout explains an uncertain or lost payment (R1, R6)", "A buyer who was charged but lost the reservation now sees \"charged, contact the merchant\" instead of a retry prompt that could charge them twice.", "`checkout/checkoutError.r6.fix.test.ts`"],
+  ["Staff console shows the fee rate actually charged (M7)", "It showed 245 bps while 225 bps was billed.", "`fees/currentFeeScheduleDisplay.fix.test.ts`"],
 ];
-children.push(H1("5. UI and UX changes"));
-UI.forEach(([what, why], i) => {
-  children.push(H3(`5.${i + 1} ${what}`), P(`**Why it mattered:** ${why}`),
-    table(["Before", "After"], [["[[screenshot]]", "[[screenshot]]"]], [CW / 2, CW / 2]), gap());
+const pic = (file, w) => new ImageRun({ type: "png", data: fs.readFileSync(path.join(__dirname, "..", "screenshots", file)), transformation: { width: w, height: Math.round(w * 900 / 1440) } });
+const beforeAfter = (name) => {
+  const half = CW / 2;
+  const c = (label, file) => new TableCell({ width: { size: half, type: WidthType.DXA }, borders, margins: { top: 60, bottom: 60, left: 80, right: 80 },
+    children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 18 })] }), new Paragraph({ children: [pic(file, 300)] })] });
+  return new Table({ width: { size: CW, type: WidthType.DXA }, columnWidths: [half, half],
+    rows: [new TableRow({ cantSplit: true, children: [c(`Before (${name})`, `${name}-before.png`), c(`After (${name})`, `${name}-after.png`)] })] });
+};
+children.push(H1("5. UI and UX changes"),
+  P("Where we have screenshots, they are shown; the other changes are proved by the tests named under each."));
+UI.forEach(([what, why, verified, shots], i) => {
+  children.push(H3(`5.${i + 1} ${what}`), P(`**Why it mattered:** ${why}`));
+  if (shots) shots.forEach((n) => children.push(beforeAfter(n), gap()));
+  else children.push(P(`**Verified by:** ${verified}`));
 });
-children.push(P("Recording: [[link to screen recording, if any]]"));
+children.push(P("Recording: `submission/LGTM_FilsPay_live_refund_flow.gif` in the repository (partial and full refund on the live site, then reconciliation)."));
 
 // 6. AI usage
 children.push(
@@ -354,10 +367,28 @@ children.push(
     "  golang:1.22 go test -p 1 ./...",
   ]),
   H2("E. Final test output"),
-  PH("Paste the final suite summary: TS pass/fail counts per workspace, scripts/, Go packages"),
-  H2("F. Load test graphs"),
-  new Paragraph({ children: [new ImageRun({ type: "png", data: fs.readFileSync(path.join(__dirname, "loadtest.png")), transformation: { width: 620, height: 336 } })], spacing: { after: 120 } }),
-  P("Summary of measured metrics across 19,610 requests executed during the FP-209 baseline replication and saturation ramp test against Delta Wholesale Traders' dataset."),
+  P("Run on 30 Oct against a freshly migrated local database, on the code at `adbee61`."),
+  table(["Suite", "Tests", "Passed", "Failed", "Before any fix"], [
+    ["apps/api", "578", "578", "0", "350 / 362"],
+    ["apps/reporting", "18", "18", "0", "7 / 11"],
+    ["apps/web", "12", "12", "0", "all passed"],
+    ["apps/admin", "1", "1", "0", "all passed"],
+    ["packages/money", "40", "40", "0", "all passed"],
+    ["packages/events", "4", "4", "0", "all passed"],
+    ["scripts/", "16", "16", "0", "5 / 5"],
+    ["TypeScript total", "669", "669", "0", ""],
+    ["apps/settlement (Go, -p 1)", "8 packages", "8", "0", "not run before (Go not installed)"],
+  ], [3000, 1300, 1300, 1300, CW - 6900]),
+  gap(),
+  H2("F. Load test data"),
+  P("The figure in section 3 is drawn by `submission/src/loadtest-chart.cjs` straight from the k6 summaries, so every number on it is measured. Requests per endpoint across both runs (k6 status checks, all passed):"),
+  table(["Endpoint", "Requests", "p50 at 30 users", "p95 at 30 users"], [
+    ["GET /v1/transactions?limit=50", "13,503", "233 ms", "307 ms"],
+    ["GET /v1/settlement/summary", "3,493", "230 ms", "377 ms"],
+    ["GET /v1/payment-links/:token (checkout)", "1,762", "not tagged", "not tagged"],
+    ["GET /v1/transactions/export (streamed CSV)", "848", "692 ms", "1.10 s"],
+  ], [4300, 1500, 1800, CW - 7600]),
+  gap(),
   H2("G. Commit message format"),
   ...Code(["fix(<ID>): <what is fixed, in plain words>", "", "What: <the bug>", "Why: <root cause>", "Impact: <who lost what, a fils example if money>", "Fix: <the change>. Proper fix (if different): <…>", "Test: <new test file>; failed before, passes now.", "Checked: <callers/places reviewed>"]),
 );
