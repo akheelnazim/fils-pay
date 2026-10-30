@@ -104,7 +104,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
-| FP-300 | Refunds (F1–F13) | open | |
+| FP-300 | Refunds (F1–F15), closed by one end-to-end test | `apps/api/src/refunds/refund.e2e.fix.test.ts` | fixed | `test(FP-300)` |
 | F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F14)` |
 | F1 | Refundable is authorized − refunded, so a partial capture can refund money never charged | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F1)` |
 | F2 | Refund another merchant's transaction (IDOR) | `apps/api/src/refunds/initiateMerchantRefund.ts` | fixed | `feat(FP-300/F2)` |
@@ -716,6 +716,12 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it breaks: no refunds at all, from the API or the dashboard.
 - Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
 - Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
+
+#### FP-300 End-to-end refund test
+- Where: `apps/api/src/refunds/refund.e2e.fix.test.ts`
+- What it covers: authorize 10 000 fils → capture → `POST /v1/refunds` of 3 000 → a blank-amount refund of the remaining 7 000 → a third refund answers 409. Checks: every ledger entry group balances; `merchant_payable` and `platform_fee_revenue` both net to 0 for the payment; refunds sum to 10 000 and the fee reversed to 250 (the whole fee); the transaction is `refunded` with `refundedFils 10 000`; two `refund.succeeded` outbox rows, delivered to the merchant's endpoint with signatures that verify (`partially_refunded` then `refunded`, totals 3 000 and 10 000); the reconciliation report has gap 0.
+- Payout reduction is the Go side (F8, `settlement/refund_fix_test.go`): a TS test can't run `CloseBatch`.
+- Test result: passes on first complete run against the fixed code · ADR: none
 
 #### F12 Full refund of a partial capture never says refunded
 - Where: `apps/api/src/payments/refundState.ts`
