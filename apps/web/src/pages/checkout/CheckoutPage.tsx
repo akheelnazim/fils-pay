@@ -27,6 +27,13 @@ export function CheckoutPage() {
   const [card, setCard] = useState<SimulatedCardInput>(EMPTY_CARD);
   const [brandHint, setBrandHint] = useState<string | null>(null);
 
+  useEffect(() => {
+    document.title = "FilsPay Checkout";
+    return () => {
+      document.title = "FilsPay Dashboard";
+    };
+  }, []);
+
   // FH: memory leak — this effect never aborts the fetch on unmount (React warning in console?)
   // theres a cancelled flag in the cleanup tho. warning must be from somewhere else — am
   useEffect(() => {

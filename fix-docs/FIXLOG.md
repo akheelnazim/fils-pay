@@ -76,7 +76,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | `apps/reporting/src/consumer/runConsumerPass.ts` | fixed | `fix(X6)` |
 | X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `fix(X8)` |
 | X9 | Reconciliation page crashes when the calculated gap is negative | `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx` | fixed | `fix(X9)` |
-| X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html` | open | |
+| X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html`, `apps/web/src/pages/checkout/CheckoutPage.tsx` | fixed | `fix(X10)` |
 
 ### Deploy and setup (D)
 
@@ -547,11 +547,11 @@ Keep each entry short. One per bug, under its class heading:
 #### X10 Merchant dashboard has checkout page title
 - Where: `apps/web/index.html`
 - Clue: `fix-docs/merchant-ui-comment-leads.md` retains the source comment: "title says Checkout but this is the whole dashboard too."
-- What's wrong: all merchant UI routes use the document title `FilsPay Checkout`.
+- What's wrong: all merchant UI routes used the document title `FilsPay Checkout`.
 - Why: the title is hard-coded in the shared SPA HTML entry point.
 - What it breaks: browser tabs/history label the merchant dashboard as checkout, making multiple FilsPay pages hard to distinguish and presenting the wrong page identity.
-- Fix: set a dashboard-wide title and update it for the public checkout route if route-specific titles are desired.
-- Test: pending · ADR: none
+- Fix: set the base title to `FilsPay Dashboard`; the public checkout route temporarily sets `FilsPay Checkout` and restores the dashboard title on unmount.
+- Test: `apps/web/src/documentTitle.x10.fix.test.ts` (fails against the old title, passes with dashboard title) · ADR: none · Commit: `fix(X10)`
 
 ### Deploy and setup (D)
 
