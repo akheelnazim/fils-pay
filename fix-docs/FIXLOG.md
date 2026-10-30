@@ -97,6 +97,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | FP-300 | Refunds (F1–F13) | open | |
 | F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F14)` |
 | F1 | Refundable is authorized − refunded, so a partial capture can refund money never charged | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F1)` |
+| F2 | Refund another merchant's transaction (IDOR) | `apps/api/src/refunds/initiateMerchantRefund.ts` | fixed | `feat(FP-300/F2)` |
 
 ### Test suite (Q)
 
@@ -612,6 +613,14 @@ Keep each entry short. One per bug, under its class heading:
 ### FP-300 refunds (feature, last) (F)
 
 Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
+
+#### F2 Refund another merchant's transaction
+- Where: `apps/api/src/refunds/initiateMerchantRefund.ts`
+- What's wrong: merchant B sending merchant A's transaction id got the refund processed against A's payment.
+- Why: the lookup was `WHERE id = $1` and the refund then ran under the row's own `merchant_id`, never the caller's.
+- What it breaks: any merchant could push money out of any other merchant's payments (once the route is wired, F6).
+- Fix: `WHERE id = $1 AND merchant_id = $2` with the caller's merchant; a foreign id is a 404 `transaction_not_found`, same as a missing one, so it doesn't reveal the id exists. · Proper fix (if different): also scope `processRefund`'s own lookup by merchant (done in F3, which rewrites that query).
+- Test: `refunds/initiateMerchantRefund.f2.fix.test.ts` (B refunding A's transaction is a 404 and nothing changes, failed before; A's own refund works) · ADR: none
 
 #### F1 Refund more than was captured
 - Where: `apps/api/src/payments/processRefund.ts`
