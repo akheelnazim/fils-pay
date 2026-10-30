@@ -104,13 +104,22 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 			if err != nil {
 				return RecalcResult{}, err
 			}
-			oldFee += booked
+			oldFee, err = money.AddFilsChecked(oldFee, booked)
+			if err != nil {
+				return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: sum booked fee: %w", err)
+			}
 		}
-		diff := newFee - oldFee
+		diff, err := money.SubtractFilsChecked(newFee, oldFee)
+		if err != nil {
+			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: fee difference: %w", err)
+		}
 		if diff == 0 {
 			continue
 		}
-		newNetPayout := b.grossFils - newFee
+		newNetPayout, err := money.SubtractFilsChecked(b.grossFils, newFee)
+		if err != nil {
+			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: net payout: %w", err)
+		}
 		if err := postMdrAdjustment(ctx, tx, merchantID, b.id, diff); err != nil {
 			return RecalcResult{}, err
 		}
@@ -125,7 +134,11 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 			// A fee increase (diff > 0) reduces net payout owed, so the cache
 			// moves by -diff — the same signed-delta idiom ApplyBatchClose
 			// already exposes for a batch close's own net payout.
-			if err := balances.ApplyBatchClose(ctx, tx, merchantID, b.id, -diff); err != nil {
+			cacheDelta, err := money.SubtractFilsChecked(0, diff)
+			if err != nil {
+				return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: cache delta: %w", err)
+			}
+			if err := balances.ApplyBatchClose(ctx, tx, merchantID, b.id, cacheDelta); err != nil {
 				return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: apply cache delta for %s: %w", b.id, err)
 			}
 		}
@@ -167,7 +180,14 @@ func recomputeBatchFee(ctx context.Context, tx pgx.Tx, batchID uuid.UUID, mdrBps
 		}
 		// FH: sums every event with this batch id -- incl. refund events once FP-212 lands? need an event_type filter?
 		// MK: refunds won't carry settlement_batch_id on transaction_events, they live in their own table. non-issue
-		fee += ComputeSettlementFee(money.Fils(amountFils), mdrBps, discountBps)
+		eventFee, err := computeSettlementFeeChecked(money.Fils(amountFils), mdrBps, discountBps)
+		if err != nil {
+			return 0, fmt.Errorf("settlement: RecalculateMDR: compute fee: %w", err)
+		}
+		fee, err = money.AddFilsChecked(fee, eventFee)
+		if err != nil {
+			return 0, fmt.Errorf("settlement: RecalculateMDR: sum fees: %w", err)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("settlement: RecalculateMDR: iterate batch events for %s: %w", batchID, err)
@@ -210,7 +230,11 @@ func postMdrAdjustment(ctx context.Context, tx pgx.Tx, merchantID, batchID uuid.
 	}
 	magnitude := diff
 	if magnitude < 0 {
-		magnitude = -magnitude
+		var err error
+		magnitude, err = money.SubtractFilsChecked(0, magnitude)
+		if err != nil {
+			return fmt.Errorf("settlement: RecalculateMDR: adjustment magnitude: %w", err)
+		}
 	}
 
 	// YA 2026-01-20: a fee decrease still debits merchant_payable here, same as an increase, the sign is in the amount

@@ -57,7 +57,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M14 | Scheme residue never journaled (ADR-0002) | `apps/settlement/internal/settlement/batch.go` | fixed | `fix(M14)` |
 | M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | `apps/settlement/internal/ledger/rebuild.go` | fixed | `fix(M15)` |
 | M16 | Scheme export stores a duplicate decimal amount instead of integer fils | `db/migrations/0050_scheme_export_lines_acquirer_amount.sql`, `apps/settlement/internal/settlement/` | fixed | `fix(M16)` |
-| M17 | Go rate and split calculations can overflow before division | `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go` | open | |
+| M17 | Go rate and split calculations can overflow before division | `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go` | fixed | `fix(M17)` |
 | M18 | Historical lifetime payout estimates retain drift and omit split payouts | `apps/settlement/internal/settlement/payout_estimate.go`, `apps/settlement/internal/splits/allocate.go` | open | |
 
 ### Settlement timing and test merchants (T)
@@ -133,7 +133,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | Q2 | `archiveReplay.test.ts` seeds real event types with empty payloads into the shared DB, breaking reporting tests | `apps/api/src/webhooks/archiveReplay.test.ts` | fixed | `fix(Q2)` |
 | Q3 | Go test packages run in parallel against one DB and deadlock in `RebuildAllBalances`; run with `-p 1` | `apps/settlement/ (go test)` | fixed | `fix(Q3)` |
 
-## Open follow-ups from later review
+## Findings and follow-ups from later review
 
 #### R6 Reservation can expire while a payment-link capture is in progress
 - Where: `apps/api/src/paymentLinks/pay.ts`
@@ -145,7 +145,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 - Where: `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go`
 - What's wrong: multiplication occurs in `int64` before division; a valid large fils amount can overflow even when the final result would fit. For example, 1,000,000,000,000,000 fils at 10,000 bps overflows the intermediate product.
 - What it breaks: extreme-value fees or split shares can be incorrect. Establish supported limits and check both shared rate calculation and split allocation before fixing.
-- Next: use overflow-safe integer arithmetic or enforce a justified bound; test boundaries and compare with the TypeScript implementation.
+- Fix: exact integer intermediates preserve half-to-even rounding and split remainders; checked results and totals return errors through batch close, MDR recalculation, and split payout rather than silently overflowing. Unrepresentable calculations roll back.
+- Test: `money/rate_m17_fix_test.go`, `splits/shares_m17_fix_test.go`, and `settlement/discounted_fee_m17_fix_test.go` cover large rates and splits, unrepresentable values, and database rollback. Before fixing, 1,000,000,000,000,000 fils at 10,000 bps returned -844,674,407,370,955; the large split lost a fil. Full Go suite passed.
 
 #### M18 Lifetime payout estimate needs historical reconciliation and split coverage
 - Where: `apps/settlement/internal/settlement/payout_estimate.go`, `apps/settlement/internal/splits/allocate.go`

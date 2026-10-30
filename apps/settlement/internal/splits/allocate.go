@@ -6,6 +6,7 @@ package splits
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -106,7 +107,11 @@ func PayoutSplitBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) 
 	rows.Close()
 
 	// Rounded together so the shares add up to the whole payout (M3).
-	for i, amount := range ChildShares(money.Fils(netPayout), weights) {
+	amounts, err := ChildSharesChecked(money.Fils(netPayout), weights)
+	if err != nil {
+		return SplitPayoutResult{}, fmt.Errorf("splits: PayoutSplitBatch: calculate shares: %w", err)
+	}
+	for i, amount := range amounts {
 		shares[i].AllocatedFils = amount
 	}
 

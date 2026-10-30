@@ -204,19 +204,38 @@ func CloseBatch(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID, bus
 	for _, txnID := range orderedTxnIDs {
 		var grossForTxn, feeForTxn money.Fils
 		for _, e := range grouped[txnID] {
-			grossForTxn += e.amountFils
+			grossForTxn, err = money.AddFilsChecked(grossForTxn, e.amountFils)
+			if err != nil {
+				return BatchResult{}, fmt.Errorf("settlement: CloseBatch: sum transaction gross: %w", err)
+			}
 			effectiveMdrBps := EffectiveMdrBpsAt(schedules, e.occurredAt, mdrBps)
 			if effectiveMdrBps -= tierBonusBps; effectiveMdrBps < 0 {
 				effectiveMdrBps = 0
 			}
-			feeForTxn += ComputeSettlementFee(e.amountFils, effectiveMdrBps, discountBps)
+			fee, err := computeSettlementFeeChecked(e.amountFils, effectiveMdrBps, discountBps)
+			if err != nil {
+				return BatchResult{}, fmt.Errorf("settlement: CloseBatch: compute fee: %w", err)
+			}
+			feeForTxn, err = money.AddFilsChecked(feeForTxn, fee)
+			if err != nil {
+				return BatchResult{}, fmt.Errorf("settlement: CloseBatch: sum transaction fees: %w", err)
+			}
 			eventIDs = append(eventIDs, e.id)
 		}
 		lines = append(lines, txnLine{txnID, grossForTxn, feeForTxn})
-		batchGross += grossForTxn
-		batchFee += feeForTxn
+		batchGross, err = money.AddFilsChecked(batchGross, grossForTxn)
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: sum batch gross: %w", err)
+		}
+		batchFee, err = money.AddFilsChecked(batchFee, feeForTxn)
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("settlement: CloseBatch: sum batch fees: %w", err)
+		}
 	}
-	netPayout := NetPayableFils(batchGross, batchFee)
+	netPayout, err := money.SubtractFilsChecked(batchGross, batchFee)
+	if err != nil {
+		return BatchResult{}, fmt.Errorf("settlement: CloseBatch: net payout: %w", err)
+	}
 
 	// Record this batch's contribution to the platform-wide lifetime
 	// processed-volume counter, in the same transaction that freezes this
