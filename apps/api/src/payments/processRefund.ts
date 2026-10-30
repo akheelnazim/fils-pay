@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
-import { ZERO_FILS, calculateRefundFee, compareFils, subtractFils, toFils, type Fils } from "@filspay/money";
+import { ZERO_FILS, addFils, calculateRefundFee, compareFils, subtractFils, toFils, type Fils } from "@filspay/money";
 import { enqueueEvent } from "@filspay/events";
 import { withTransaction } from "../db/withTransaction.js";
 import type { AcquirerSimulator } from "../acquirer/types.js";
@@ -215,11 +215,30 @@ export async function processRefund(
     const now = await current();
     const newRefundedTotal = now.refundedFils;
     const newStatus = await setStatus(now);
-    const feeReversedFils = calculateRefundFee(
-      prepared.capturedFils,
-      prepared.feeChargedFils,
-      prepared.requestedAmount,
+    // F5: each refund's share is rounded on its own, so the shares can add up
+    // to more (or less) than the fee charged. Cap the running total at the
+    // fee, and the refund that brings the money back to the full capture
+    // gives back whatever fee is left. Earlier refunds are read under the
+    // transaction lock taken by current() above.
+    const earlier = await client.query<{ amount_fils: string; fee_reversed_fils: string }>(
+      `SELECT COALESCE(SUM(amount_fils), 0)::text AS amount_fils,
+              COALESCE(SUM(fee_reversed_fils), 0)::text AS fee_reversed_fils
+         FROM refunds WHERE transaction_id = $1 AND status = 'succeeded'`,
+      [prepared.transactionId],
     );
+    const earlierRefundedFils = toFils(Number(earlier.rows[0]!.amount_fils));
+    const feeLeftFils = subtractFils(
+      prepared.feeChargedFils,
+      toFils(Number(earlier.rows[0]!.fee_reversed_fils)),
+    );
+    const share = calculateRefundFee(prepared.capturedFils, prepared.feeChargedFils, prepared.requestedAmount);
+    const isFinalRefund = compareFils(addFils(earlierRefundedFils, prepared.requestedAmount), now.capturedFils) >= 0;
+    const feeReversedFils =
+      compareFils(feeLeftFils, ZERO_FILS) <= 0
+        ? ZERO_FILS
+        : isFinalRefund || compareFils(share, feeLeftFils) > 0
+          ? feeLeftFils
+          : share;
 
     const refundResult = await client.query<{ id: string; occurred_at: Date }>(
       `INSERT INTO refunds

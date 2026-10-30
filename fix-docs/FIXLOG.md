@@ -101,6 +101,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F2 | Refund another merchant's transaction (IDOR) | `apps/api/src/refunds/initiateMerchantRefund.ts` | fixed | `feat(FP-300/F2)` |
 | F3 | Concurrent refunds both pass (FP-209) and one overwrites the other's total | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F3)` |
 | F4 | Refund fee reversal ignores the negotiated discount (reverses more than was kept) | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F4)` |
+| F5 | Partial refunds' fee reversals can exceed the fee, or fall short when everything is returned | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F5)` |
 | F6 | Refund route was a 501 stub at a different address than the dashboard posts to | `apps/api/src/routes/refunds.ts` | fixed | `feat(FP-300/F6)` |
 | F13 | `transactions.test.ts` asserted the refund 501 | `apps/api/src/routes/transactions.test.ts` | fixed | `feat(FP-300/F6)` |
 
@@ -626,6 +627,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it breaks: no refunds at all, from the API or the dashboard.
 - Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
 - Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
+
+#### F5 Partial refunds' fee reversals don't add up to the fee
+- Where: `apps/api/src/payments/processRefund.ts`
+- What's wrong: on a 1 000 fils capture with a 25 fils fee, 33 refunds of 30 reversed 33 fils of fee; ten refunds of 100 reversed only 20.
+- Why: each refund's share (`calculateRefundFee`, banker's rounding) was rounded on its own, with no running total and no cap.
+- What it breaks: fee revenue for a payment goes negative (more given back than charged), or a merchant who returned everything keeps paying part of the fee.
+- Fix: in step 3, under the transaction lock, read the succeeded refunds' `SUM(amount_fils)` and `SUM(fee_reversed_fils)`; reverse the proportional share capped at the fee left, and the refund that brings refunds up to the capture reverses all the fee left (0 if none is left). The final-refund check uses the refunds table, not `refunded_fils`, which also holds other in-flight reservations (F3). Review: nothing else depends on per-refund shares (settlementClient passes the value through, 0072 view sums it). · Proper fix (if different): derive each reversal from the cumulative total (`round(fee × refunded ÷ captured)` minus what's already reversed), which spreads rounding evenly instead of loading it on the last refund.
+- Test: `payments/processRefund.f5.fix.test.ts` (33×30 never exceeds 25 and the final 10 brings it to exactly 25; ten 100s reverse 25; 333/333/334 reverse 8/8/9; discounted 3×3 400 reverse 229 net; a single 4 000 still 100; one full refund 250; a no-fee payment 0). Failed before: `reversed 33 of a 25 fee`, `20 !== 25`, `8 !== 9`, `228 !== 229` · ADR: none
 
 #### F4 Fee reversal ignores the negotiated discount
 - Where: `apps/api/src/payments/processRefund.ts`
