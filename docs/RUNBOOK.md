@@ -79,7 +79,9 @@ nothing):
 settlement payout-estimate-report
 ```
 
-Agree any correction with Finance before changing a stored value.
+Agree any correction with Finance before changing a stored value. On seeded
+demo data every merchant with paid batches will show drift, because the seed
+sets the estimate but writes no payout legs.
 
 ## A merchant's balance looks wrong
 
