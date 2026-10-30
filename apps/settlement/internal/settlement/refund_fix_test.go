@@ -155,3 +155,44 @@ func TestF8_RecalculateMDRKeepsTheRefundDeduction(t *testing.T) {
 		t.Errorf("net after recalculation = %d, want 5800", net)
 	}
 }
+
+// F16 (found reviewing F8): a batch whose refunds took the net down to 0 went
+// negative when RecalculateMDR then raised the fee.
+func TestF16_RecalculateMDRNeverMakesTheNetNegative(t *testing.T) {
+	pool := mustPool(t)
+	ctx := context.Background()
+	merchantID := insertActiveMerchant(t, pool, 250)
+	day := time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC)
+	start, _ := BusinessDayWindow(day)
+	txnID, _ := insertCaptureEvent(t, pool, merchantID, 250, 10_000, start.Add(time.Hour))
+	insertRefund(t, merchantID, txnID, 10_000, 250, start.Add(2*time.Hour)) // returns 9 750
+	res, err := CloseBatch(ctx, pool, merchantID, day)
+	if err != nil || res.NetPayoutFils != 0 {
+		t.Fatalf("CloseBatch = %+v, %v; want net 0", res, err)
+	}
+	var cachedBefore int64
+	if err := pool.QueryRow(ctx, `SELECT cached_payable_fils FROM merchant_balances WHERE merchant_id = $1`, merchantID).Scan(&cachedBefore); err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE merchants SET mdr_bps = 300 WHERE id = $1`, merchantID); err != nil {
+		t.Fatalf("update mdr_bps: %v", err)
+	}
+
+	from, to := recalcWindow(day)
+	if _, err := RecalculateMDR(ctx, pool, merchantID, from, to); err != nil {
+		t.Fatalf("RecalculateMDR: %v", err)
+	}
+	var net, cachedAfter int64
+	if err := pool.QueryRow(ctx, `SELECT net_payout_fils FROM settlement_batches WHERE id = $1`, res.BatchID).Scan(&net); err != nil {
+		t.Fatalf("read net: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT cached_payable_fils FROM merchant_balances WHERE merchant_id = $1`, merchantID).Scan(&cachedAfter); err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	if net != 0 {
+		t.Errorf("net after recalculation = %d, want 0 (never negative)", net)
+	}
+	if cachedAfter != cachedBefore {
+		t.Errorf("payable cache moved %d -> %d, but the batch net didn't change", cachedBefore, cachedAfter)
+	}
+}
