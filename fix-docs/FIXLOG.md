@@ -73,7 +73,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X3 | Large export can OOM the API | `apps/api/src/routes/transactions.ts` | fixed | `fix(X3)` |
 | X4 | Credit threshold can be split around | `apps/api/src/admin/creditThreshold.ts` | fixed | `fix(X4)` |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | `scripts/reconcile_march.ts` | fixed | `fix(X5)` |
-| X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
+| X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | `apps/reporting/src/consumer/runConsumerPass.ts` | fixed | `fix(X6)` |
 | X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `fix(X8)` |
 
 ### Deploy and setup (D)
@@ -498,6 +498,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: each merchant's March payable was cut by its residue (70 fils across 13 lines in production, twice per X2), and the residue account moved the wrong way, so finance's monthly clearing against the scheme statement can't tie out.
 - Fix: the sweep posts credit `card_scheme_clearing` / debit `scheme_rounding_residue` (same amounts, still one group per merchant). X2's test helper now reads the residue debit instead of the merchant debit. · Proper fix (if different): with finance, reverse the production postings already made (each run's merchant_payable debit and residue credit) and post the ADR-0002 legs once; not done here (never run scripts against data). Residue for April onward is M14.
 - Test: `scripts/reconcile_march.x5.fix.test.ts` (no merchant_payable leg; legs are clearing credit / residue debit of 9 fils; both failed before; rolled back) · ADR: 0002
+
+#### X6 Reporting stops for good on one malformed event
+- Where: `apps/reporting/src/consumer/runConsumerPass.ts`
+- What's wrong: a single outbox event the consumer can't apply (e.g. a `transaction.voided` payload with no `merchantId`) stopped all reporting permanently.
+- Why: the whole batch runs in one transaction; the bad event's NOT NULL violation rolled back the pass, the watermark never moved, and every later pass re-selected the same event and failed again. The existing atomicity test locked this in (its "fix" was to delete the outbox row by hand). Seen in practice with Q2's test rows.
+- What it breaks: dashboards and rollups freeze at the bad event for every merchant until someone edits `outbox_events`.
+- Fix: each event runs in a SAVEPOINT. A data error (Postgres 22xxx/23xxx, JS TypeError/RangeError) rolls back only that event, records it in the new `reporting_dead_letter_events` (migration 0076), logs it, and the pass continues; any other error (connection, serialization, missing table) still rolls back the whole pass for a retry. Updated the atomicity test to prove that with an injected connection error (`runConsumerPass` takes an optional `apply` for this). · Proper fix (if different): an admin view and replay for dead-lettered events, and validating payloads when they are enqueued. Tradeoff: a TypeError/RangeError from a code bug (not the payload) also sets the event aside rather than blocking; it is logged and recorded for replay.
+- Test: `consumer/runConsumerPass.x6.fix.test.ts` (bad event between two good ones: both apply, watermark moves, event recorded; not re-recorded next pass; the error classifier; first two failed before with the not-null violation) · ADR: 0005 (0076 is allowed)
 
 #### X8 Reporting crashes on its own lag check
 - Where: `apps/reporting/src/consumer/applyEvent.ts`

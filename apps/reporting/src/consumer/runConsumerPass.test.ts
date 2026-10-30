@@ -1,6 +1,6 @@
 /**
  * Tests for runConsumerPass: the transactional
- * atomicity claim (a mid-batch throw rolls back the WHOLE pass — neither the
+ * atomicity claim (a mid-batch non-data throw rolls back the WHOLE pass — neither the
  * watermark nor any rollup write from that batch persists), and an
  * end-to-end pass over real events enqueued via @filspay/events'
  * enqueueEvent with the exact payload shapes capture.ts/void.ts and
@@ -118,54 +118,49 @@ test("runConsumerPass: end-to-end settlement.batch_closed populates merchant_pay
 });
 
 // MK: this is the proof exactly-once holds.
-test("runConsumerPass: atomicity — an apply failure partway through a multi-event batch rolls back the WHOLE pass, neither watermark nor any rollup write from that batch persists", async () => {
+test("runConsumerPass: atomicity — a non-data failure partway through a multi-event batch rolls back the WHOLE pass, neither watermark nor any rollup write from that batch persists", async () => {
+  // X6: a malformed payload is now set aside (runConsumerPass.x6.fix.test.ts);
+  // a failure that might succeed on retry (here a stand-in for a lost
+  // connection, thrown on the second event) must still roll everything back.
   const merchantId = await createMerchant("atomicity");
 
-  // Event 1: valid, would successfully write a merchant_daily_volume row if
-  // applied on its own.
   const goodEvent = await enqueueEvent(pool, {
     eventType: "transaction.captured",
     aggregateType: "transaction",
     aggregateId: randomUUID(),
     payload: { merchantId, amountCapturedFils: 1_234, feeFils: 18, newStatus: "captured", capturedTotalFils: 1_234 },
   });
-
-  // Event 2: malformed — missing merchantId entirely, so
-  // applyTransactionVoided's INSERT sends a NULL into
-  // merchant_daily_volume.merchant_id, violating its NOT NULL constraint
-  // and throwing partway through the batch (event 2 of 2, ordered by id).
-  const badEvent = await enqueueEvent(pool, {
+  const secondEvent = await enqueueEvent(pool, {
     eventType: "transaction.voided",
     aggregateType: "transaction",
     aggregateId: randomUUID(),
-    payload: {}, // no merchantId
+    payload: { merchantId },
   });
-  assert.ok(badEvent.id > goodEvent.id, "bad event sorts after the good one, so the good one is applied first");
+  assert.ok(secondEvent.id > goodEvent.id, "the failing event sorts after the good one, so the good one is applied first");
 
   const cursorBefore = await getCursor();
+  const { applyEvent } = await import("./applyEvent.js");
+  const failOnSecond: typeof applyEvent = async (client, row) => {
+    if (BigInt(row.id) === BigInt(secondEvent.id)) {
+      throw Object.assign(new Error("connection terminated"), { code: "08006" });
+    }
+    return applyEvent(client, row);
+  };
 
-  await assert.rejects(runConsumerPass(pool, config));
+  await assert.rejects(runConsumerPass(pool, config, { apply: failOnSecond }));
 
-  const cursorAfter = await getCursor();
-  assert.equal(cursorAfter, cursorBefore, "watermark must be completely untouched after a rolled-back pass");
-
+  assert.equal(await getCursor(), cursorBefore, "watermark must be completely untouched after a rolled-back pass");
   const volumeRows = await pool.query(`SELECT * FROM merchant_daily_volume WHERE merchant_id = $1`, [merchantId]);
   assert.equal(volumeRows.rows.length, 0, "the good event's rollup write must NOT have persisted — the whole pass rolled back");
 
-  // Prove the pass is retryable and self-heals once the poisoned row is no
-  // longer in the way: delete the malformed event, retry, and confirm the
-  // good event (still unprocessed, since the watermark never advanced past
-  // it) is now correctly applied.
-  await pool.query(`DELETE FROM outbox_events WHERE id = $1`, [badEvent.id]);
+  // Retryable: the next ordinary pass applies both events.
   const retryResult = await runConsumerPass(pool, config);
-  assert.ok(retryResult.processedCount >= 1);
-
-  const volumeRowsAfterRetry = await pool.query(`SELECT captured_count FROM merchant_daily_volume WHERE merchant_id = $1`, [
+  assert.ok(retryResult.processedCount >= 2);
+  const after = await pool.query(`SELECT captured_count, voided_count FROM merchant_daily_volume WHERE merchant_id = $1`, [
     merchantId,
   ]);
-  assert.equal(volumeRowsAfterRetry.rows.length, 1);
-  assert.equal(volumeRowsAfterRetry.rows[0].captured_count, 1);
-
-  const cursorFinal = await getCursor();
-  assert.ok(cursorFinal >= goodEvent.id, "watermark now past the previously-blocked good event");
+  assert.equal(after.rows.length, 1);
+  assert.equal(after.rows[0].captured_count, 1);
+  assert.equal(after.rows[0].voided_count, 1);
+  assert.ok((await getCursor()) >= BigInt(secondEvent.id), "watermark now past both events");
 });
