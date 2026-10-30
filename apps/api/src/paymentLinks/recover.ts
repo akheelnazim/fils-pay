@@ -11,6 +11,13 @@ export interface RecoverPaymentLinkInput {
   linkId: string;
   /** R8: omitted means "ask the acquirer"; given means an operator checked it. */
   attestedOutcome?: AttestedCaptureOutcome;
+  /**
+   * R9: for a link reserved before migration 0081 (no capture marker), the
+   * transaction the operator found for it. Ignored unless the link has no
+   * marker; checked to belong to the link's merchant, for its amount, and to
+   * no other link.
+   */
+  transactionId?: string;
   reason: string;
   adminUserId: string;
 }
@@ -39,8 +46,19 @@ const RECOVERY_MIN_AGE_MINUTES = 15;
 
 interface MarkedTransaction {
   status: string;
+  amount_fils: string | number;
   captured_fils: string | number;
+  /** Created within NAMED_TXN_WINDOW_MINUTES after the link's reservation. */
+  from_this_reservation: boolean;
 }
+
+/**
+ * R9: a payment authorizes right after it reserves the link, so the
+ * transaction an operator names for an unmarked link must have been created
+ * shortly after that reservation. This keeps an unrelated payment of the same
+ * merchant and amount from being voided or used to mark the link paid.
+ */
+const NAMED_TXN_WINDOW_MINUTES = 10;
 
 /**
  * R7: resolves a payment link left "processing" by an uncertain capture (R6).
@@ -72,14 +90,20 @@ export async function recoverPaymentLinkCapture(
   if (!outcome) {
     const marked = await pool.query<{ acquirer_reference: string; amount_fils: string | number }>(
       `SELECT t.acquirer_reference, pl.amount_fils
-         FROM payment_links pl JOIN transactions t ON t.id = pl.capture_transaction_id
-        WHERE pl.id = $1 AND pl.status = 'reserved'`,
-      [input.linkId],
+         FROM payment_links pl JOIN transactions t ON t.id = COALESCE(pl.capture_transaction_id, $2::uuid)
+        WHERE pl.id = $1 AND pl.status = 'reserved' AND t.merchant_id = pl.merchant_id`,
+      [input.linkId, input.transactionId ?? null],
     );
     const row = marked.rows[0];
     if (!row) {
-      const link = await pool.query(`SELECT 1 FROM payment_links WHERE id = $1`, [input.linkId]);
+      const link = await pool.query<{ status: string; capture_transaction_id: string | null }>(
+        `SELECT status, capture_transaction_id FROM payment_links WHERE id = $1`,
+        [input.linkId],
+      );
       if (link.rowCount === 0) return { statusCode: 404, body: { error: "payment_link_not_found" } };
+      if (link.rows[0]!.status === "reserved" && link.rows[0]!.capture_transaction_id === null && !input.transactionId) {
+        return { statusCode: 409, body: { error: "transaction_required" } };
+      }
       const earlier = await pool.query(
         `SELECT 1 FROM admin_audit_log
           WHERE action = 'payment_link_capture_recovery' AND target_type = 'payment_link' AND target_id = $1`,
@@ -112,7 +136,18 @@ export async function recoverPaymentLinkCapture(
     const link = linkResult.rows[0];
     if (!link) return { statusCode: 404, body: { error: "payment_link_not_found" } };
 
-    if (link.status !== "reserved" || link.capture_transaction_id === null) {
+    // R9: a link reserved before migration 0081 has no marker; the operator
+    // names its transaction instead.
+    const named = input.transactionId ?? null;
+    if (link.capture_transaction_id !== null && named !== null && named !== link.capture_transaction_id) {
+      return { statusCode: 409, body: { error: "transaction_mismatch", markedTransactionId: link.capture_transaction_id } };
+    }
+    const marker = link.status === "reserved" ? (link.capture_transaction_id ?? named) : null;
+    if (link.status === "reserved" && marker === null) {
+      return { statusCode: 409, body: { error: "transaction_required" } };
+    }
+
+    if (marker === null) {
       // Not stuck now: a repeat of an earlier report is fine, anything else is not.
       const earlier = await client.query<{ outcome: string }>(
         `SELECT metadata->>'attestedOutcome' AS outcome FROM admin_audit_log
@@ -133,12 +168,29 @@ export async function recoverPaymentLinkCapture(
     if (!link.stale) return { statusCode: 409, body: { error: "recently_reserved" } };
 
     const txnResult = await client.query<MarkedTransaction>(
-      `SELECT status, captured_fils FROM transactions
-        WHERE id = $1 AND merchant_id = $2 FOR UPDATE`,
-      [link.capture_transaction_id, link.merchant_id],
+      `SELECT t.status, t.amount_fils, t.captured_fils,
+              (t.created_at >= pl.reserved_at
+               AND t.created_at < pl.reserved_at + ($4 || ' minutes')::interval) AS from_this_reservation
+         FROM transactions t, payment_links pl
+        WHERE t.id = $1 AND t.merchant_id = $2 AND pl.id = $3
+          FOR UPDATE OF t`,
+      [marker, link.merchant_id, link.id, NAMED_TXN_WINDOW_MINUTES],
     );
     const txn = txnResult.rows[0];
     if (!txn) return { statusCode: 409, body: { error: "marked_transaction_missing" } };
+    if (link.capture_transaction_id === null) {
+      if (Number(txn.amount_fils) !== Number(link.amount_fils)) {
+        return { statusCode: 409, body: { error: "transaction_amount_mismatch" } };
+      }
+      if (!txn.from_this_reservation || (txn.status !== "authorized" && txn.status !== "captured")) {
+        return { statusCode: 409, body: { error: "transaction_not_from_this_reservation" } };
+      }
+      const elsewhere = await client.query(
+        `SELECT 1 FROM payment_links WHERE id <> $2 AND (transaction_id = $1 OR capture_transaction_id = $1)`,
+        [marker, link.id],
+      );
+      if ((elsewhere.rowCount ?? 0) > 0) return { statusCode: 409, body: { error: "transaction_belongs_elsewhere" } };
+    }
     const capturedHere = txn.status === "captured" && Number(txn.captured_fils) === Number(link.amount_fils);
     const anyCaptureHere = Number(txn.captured_fils) > 0;
 
@@ -148,7 +200,7 @@ export async function recoverPaymentLinkCapture(
         `UPDATE payment_links
             SET status = 'paid', paid_at = now(), transaction_id = $2, reserved_at = NULL, capture_transaction_id = NULL
           WHERE id = $1`,
-        [link.id, link.capture_transaction_id],
+        [link.id, marker],
       );
     } else {
       if (anyCaptureHere) return { statusCode: 409, body: { error: "local_books_show_capture" } };
@@ -158,7 +210,7 @@ export async function recoverPaymentLinkCapture(
           WHERE id = $1`,
         [link.id],
       );
-      toVoid = { transactionId: link.capture_transaction_id, merchantId: link.merchant_id };
+      toVoid = { transactionId: marker, merchantId: link.merchant_id };
     }
 
     await insertAdminAuditLog(client, {
@@ -170,7 +222,8 @@ export async function recoverPaymentLinkCapture(
         attestedOutcome: decided,
         source,
         reason: input.reason,
-        transactionId: link.capture_transaction_id,
+        transactionId: marker,
+        transactionNamedBy: link.capture_transaction_id === null ? "operator" : "link_marker",
       },
     });
     return {

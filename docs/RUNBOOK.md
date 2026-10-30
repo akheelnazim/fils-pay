@@ -78,10 +78,15 @@ POST /v1/admin/payment-links/<link id>/recover-capture
   authorization is voided. Refused with `local_books_show_capture` if a
   capture is recorded here; reconcile that first.
 
-Each call is audited and repeating the same report does nothing more. A link
+Each call is audited and repeating the same report does nothing more.
+`GET /v1/admin/payment-links/stuck` lists every link held for more than 15
+minutes. A link reserved before migration 0081 shows `hasMarker: false`: find
+its transaction and add `"transactionId"` to the recovery call (R9). It must be
+the same merchant and amount and created within 10 minutes after the link was
+reserved; check its acquirer reference before naming it, since a wrong
+transaction would be voided or used to mark the link paid. A link
 reserved less than 15 minutes ago is refused (`recently_reserved`): its payment
 may still be running.
-Reservations created before migration 0081 have no marker and are not covered.
 
 When deploying migration 0081, pause new payment-link traffic, drain all old
 API workers and reconcile their in-flight or stale reservations before

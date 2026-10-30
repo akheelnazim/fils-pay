@@ -38,6 +38,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | R6 | A payment link reservation can expire during capture, allowing another charge | `apps/api/src/paymentLinks/pay.ts` | fixed | `fix(R6)` |
 | R7 | Uncertain payment-link captures require manual reconciliation | `apps/api/src/paymentLinks/recover.ts`, `apps/api/src/routes/adminPaymentLinks.ts`, `docs/RUNBOOK.md` | fixed | `fix(R7)` |
 | R8 | Payment-link recovery can't ask the acquirer what happened | `apps/api/src/acquirer/simulator.ts`, `apps/api/src/paymentLinks/recover.ts` | fixed | `fix(R8)` |
+| R9 | Stuck payment links can't be listed, and links reserved before 0081 can't be recovered | `apps/api/src/routes/adminPaymentLinks.ts`, `apps/api/src/paymentLinks/recover.ts` | fixed | `fix(R9)` |
 
 ### Money correctness (M)
 
@@ -176,6 +177,14 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 - What it breaks: every stuck link needed someone to check the acquirer's portal by hand.
 - Fix: optional `lookupCapture(acquirerReference)` on the acquirer interface, answering `captured` (with the amount), `not_captured` or `unknown`. The simulator remembers the references it authorized and what it captured on each (process-local, like its idempotency caches: after a restart every reference is `unknown`). The recovery route now accepts no `attestedOutcome`: it asks the acquirer outside any lock, then runs the same locked checks as for an operator's report (books must agree, 15-minute age, audit row with `source: acquirer_lookup`). `unknown` → 409 `acquirer_outcome_unknown` (an operator reports instead); a captured amount different from the link → 409 `acquirer_amount_mismatch`. An acquirer without the method is treated as `unknown`. · Proper fix (if different): a durable record (or a real acquirer inquiry API) so lookups survive a restart.
 - Test: `paymentLinks/recover.r8.fix.test.ts` (simulator lookups; acquirer never captured → released and voided, audited as a lookup, repeat no-op; captured and booked → paid; captured but not booked → 409 `ledger_not_reconciled`; captured twice at the acquirer → 409 `acquirer_amount_mismatch`; unknown reference → 409, then an operator's report works). The lookup did not exist before · ADR: none
+
+#### R9 Listing stuck links, and links reserved before migration 0081
+- Where: `apps/api/src/routes/adminPaymentLinks.ts`, `apps/api/src/paymentLinks/recover.ts`
+- What's wrong: nothing listed links held "processing"; and a link reserved by an API worker older than migration 0081 has no capture marker, so R7/R8 recovery answered `not_awaiting_recovery` and the RUNBOOK's only option was SQL.
+- Why: recovery found the transaction only through the marker.
+- What it breaks: unmarked stuck links stay unavailable with no audited way out.
+- Fix: `GET /v1/admin/payment-links/stuck` (finance / super_admin, read-only) lists reservations older than 15 minutes with `hasMarker`. Recovery accepts `transactionId` for an unmarked link: it must belong to the link's merchant, be for the link's amount, be on no other link (`transaction_belongs_elsewhere`), and (review find) have been created within 10 minutes after the link's reservation and still be authorized or captured (`transaction_not_from_this_reservation`), so an unrelated payment of the same merchant and amount can't be voided or used to mark the link paid. The stuck list is capped at 500 rows; then the same checks as R7/R8 apply (operator report or acquirer lookup, 15-minute age, books agree). An unmarked link without it → 409 `transaction_required`; naming a different transaction on a marked link → 409 `transaction_mismatch`. The audit row records whether the transaction came from the marker or the operator. · Proper fix (if different): same.
+- Test: `paymentLinks/recover.r9.fix.test.ts` (list shows old marked and unmarked links, not fresh ones, and needs a login; unmarked without a transaction 409; with one released and audited; foreign merchant, wrong amount and another link's transaction refused; mismatch on a marked link refused; bad uuid 400; a same-merchant same-amount transaction from another time refused; an unmarked lookup without a transaction says `transaction_required`). Neither the list nor the parameter existed before · ADR: none
 
 #### M17 Integer overflow in Go rate and split calculations
 - Where: `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go`
