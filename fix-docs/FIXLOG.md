@@ -49,7 +49,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M7 | Dashboard fee 245 vs charged 225 bps | `apps/api/src/fees/currentFeeScheduleDisplay.ts` | fixed | `fix(M7)` |
 | M8 | MDR recalculation rewrites paid batches | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `fix(M8)` |
 | M9 | Recalculate balances button 135K → 7K (FP-203) | `apps/settlement/internal/ledger/refresh.go` | fixed | `fix(M9)` |
-| M10 | Settlement summary double-counts multi-capture | open | |
+| M10 | Settlement summary double-counts multi-capture | `apps/api/src/settlement/query.ts` | fixed | `fix(M10)` |
 | M11 | Reconciliation pending uses `merchants.mdr_bps` | open | |
 | M12 | `parsePromotionalDiscountFils` uses float × 100 | `apps/api/src/payments/discountAdjustment.ts` | fixed | `fix(M12)` |
 | M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | open | |
@@ -379,6 +379,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: a closed 100.000 BD batch with a 2.250 BD fee showed 100.000 BD payable instead of 97.750; an already-paid batch kept showing as owed. Support then "fixed" balances with Adjust (FP-203), which the next rebuild wiped.
 - Fix: rebuild from `SUM(net_payout_fils)` of `settlement_batches` with `status = 'closed'`, still settled data as ADR-0004 requires (the audit's swap to the ledger walk is rejected by the ADR). Updated `internalapi/server_test.go`, which asserted the gross 12000 instead of the net 11700. The 0054 view is now unused. · Proper fix (if different): same; the incremental cache's own drift (paid batches in Recalculate MDR, split payouts) is M8/M3/M15.
 - Test: `ledger/refresh_fix_test.go` (net not gross, paid and open excluded, all-paid = 0, recalculated fee, two batches with no cache row; five failed before) · ADR: 0004, 0006 unchanged
+
+#### M10 Settlement summary double-counts multi-capture transactions
+- Where: `apps/api/src/settlement/query.ts`
+- What's wrong: `GET /v1/settlement/summary` overstated captured volume for merchants who capture in parts (Delta Wholesale about 38% over the batches, `docs/perf/2026-07-settlement-summary-slow.md`; single-capture merchants matched).
+- Why: the query joined every capture event but summed `transactions.captured_fils`, the running total, once per event; and it counted the whole total even when only one part was captured in the window.
+- What it breaks: a 5.000 BD transaction captured as 3.000 + 2.000 showed 10.000 BD; merchants and finance see a summary that disagrees with their payouts (the "timing difference" was double counting).
+- Fix: sum `te.amount_fils`, the amount of each capture event in the window. · Proper fix (if different): same.
+- Test: `settlement/summary.fix.test.ts` (two-part capture 5000 not 10000, only the in-window part, mixed single and three-part, empty; three failed before) · ADR: none
 
 #### M12 Unused promotional-discount parser reads BD as cents
 - Where: `apps/api/src/payments/discountAdjustment.ts`
