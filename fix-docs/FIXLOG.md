@@ -81,7 +81,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
 | D1 | Migration 0054 references missing table | `db/migrations/` | fixed | `fix(D1)` |
-| D2 | Migration 0055 uses non-existent columns | open | |
+| D2 | Migration 0055 uses non-existent columns | `db/migrations/` | fixed | `fix(D2)` |
 | D3 | Dev webhook key fallback is 34 bytes, not 32 | `apps/api/src/config.ts` | fixed | `fix(D3)` |
 | D4 | API has no CORS; dashboard can't call it | open | |
 | D5 | Dockerfiles referenced by compose are missing | open | |
@@ -532,6 +532,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: every new environment (the new deployment server, a new developer, CI) cannot be built from migrations.
 - Fix: per the owner decision (ADR-0005 wins), deleted `0054_views.sql` and `0056_api_keys_revoke_after.sql` and added `0077_views_and_revoke_after.sql`, idempotent so old and fresh databases end the same: keeps `v_active_api_keys` and `api_keys.revoke_after`, drops `v_unbatched_capture_events` (never worked) and `merchant_payable_position` (the decision kept it because M9's button read it; since M9 nothing does, and it summed gross export lines, a wrong figure). Old filenames stay recorded in `schema_migrations`, which the runner ignores. 0055 is D2. · Proper fix (if different): same.
 - Test: `db/migrate.fix.test.ts` (a fresh migrate on a throwaway database no longer stops on `settlement_batch_events`, failed before; no 0054/0056 files; an already-migrated database has 0077's objects) · ADR: 0005, 0004 (no reader of the dropped view)
+
+#### D2 Migration 0055 uses columns that don't exist
+- Where: `db/migrations/`
+- What's wrong: after D1, a fresh `npm run migrate` stopped at `0055_chart_of_accounts_suspense.sql`.
+- Why: it inserted `(code, name, account_type, description)` into `chart_of_accounts`, whose columns are `(id, name, kind)`, with kind `'suspense'`, which its CHECK (`asset`/`liability`/`revenue`) rejects. It also used a number ADR-0005 reserves.
+- What it breaks: same as D1, no new environment can be built from migrations.
+- Fix: deleted it (the owner decision allowed "fix or drop"). Its two accounts (`fx_rounding_difference`, `chargeback_suspense`) are used nowhere and had no valid kind. A fresh migrate now runs to the end. · Proper fix (if different): add the accounts in a new migration if a chargeback or FX lane is ever built, with a kind the CHECK allows.
+- Test: `db/migrate.d2.fix.test.ts` (a fresh migrate on a throwaway database runs to the end, failed before at 0055; no 0054–0056 files; the fresh database has 0077's objects and the ledger accounts) · ADR: 0005
 
 #### D3 Dev webhook key fallback is 34 bytes
 - Where: `apps/api/src/config.ts`
