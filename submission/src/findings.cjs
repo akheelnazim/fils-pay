@@ -21,6 +21,8 @@ module.exports = [
       { id: "S10", t: "Credit self-approval compares display names", sym: "One operator can approve their own credit after a rename.", how: "Audit.", cause: "assertDistinctApprover compared displayName.", fix: "Compare adminUserId.", ver: "admin/creditApproval.fix.test.ts.", data: NONE },
       { id: "S11", t: "Acquirer secret committed to git", sym: "Signing secret in ops/.env.docker.", how: "Audit.", cause: ".gitignore covered only .env.", fix: "Untracked file, ignore .env.*, added .env.docker.example.", ver: "scripts/committed_secrets.fix.test.ts.", data: "Secret still in git history and must be rotated with the acquirer (not done: needs the acquirer and a force-push)." },
       { id: "S12", t: "Any admin can issue merchant credits", sym: "Support login could post credits up to 50.000 BD.", how: "Reviewer agent while fixing S8/S10.", cause: "Create route only required an admin session.", fix: "requireAdminRole('finance','super_admin').", ver: "routes/adminCredits.fix.test.ts: 201 before, 403 now.", data: NONE },
+      { id: "S13", t: "Any merchant can read another merchant's transactions", sym: "GET /v1/reporting/transactions with another merchant's id in the filter returns up to 500 of their transactions.", how: "Final code scan (agent read the code, main session re-read it).", cause: "resolveReportMerchantId accepted any merchant that is a split child of any parent, without checking the caller is that parent.", fix: "Require the split relationship's parent to be the authenticated caller.", ver: "reporting/scope.s13.fix.test.ts (self, own child, another parent's child, unrelated merchant); another parent's child was returned before.", data: NONE },
+      { id: "S19", t: "Reporting summary unauthenticated; disabled admins keep impersonation (partly fixed)", sym: "export-summary answered without a login (500); a disabled admin's impersonation grant kept working until expiry.", how: "Final code scan.", cause: "The route read merchant auth without requiring it; grant lookup didn't check the admin was still active.", fix: "Require merchant authentication; require an active admin on every grant lookup. Still open: rotating the session after OTP.", ver: "reporting.s19.fix.test.ts (500 !== 401 before), impersonation.s19.fix.test.ts.", data: NONE },
     ],
   },
   {
@@ -59,6 +61,7 @@ module.exports = [
       { id: "M18", t: "Split payouts skip the lifetime estimate", sym: "Estimate omits split payouts.", how: "Follow-up review.", cause: "Split path never updated it.", fix: "Increment by the amount allocated.", ver: "payout_estimate_m18_fix_test.go.", data: "Past split payouts missing; see M19." },
       { id: "M19", t: "Historical payout estimates need reconciliation (partly fixed)", sym: "Stored estimates differ from what was paid.", how: "Follow-up after M5/M18.", cause: "Old float drift and missing split payouts.", fix: "Read-only drift report added; correction waits for Finance.", ver: "payout_estimate_m19_fix_test.go.", data: "Not overwritten on purpose: production totals need Finance sign-off." },
       { id: "M20", t: "Monthly estimate overstates partial splits", sym: "Estimate above what was paid.", how: "Follow-up review.", cause: "Summed full batch net.", fix: "Sum recognized payout ledger credits.", ver: "payout_estimate_m20_fix_test.go.", data: NONE },
+      { id: "M21", t: "TypeScript and Go apply the discount in a different order", sym: "Settlement fee 1 fil different from the capture ledger.", how: "Final code scan (copy-paste drift between TS and Go).", cause: "Settlement discounted the amount before rounding MDR; capture discounts the rounded fee.", fix: "MDR first, then the discount on the rounded fee, with checked integer maths.", ver: "discounted_fee_m21_fix_test.go (10,200 at 250 bps, 10% discount: got 230, want 229); old test that asserted the old order updated.", data: "Closed batches are not recalculated." },
     ],
   },
   {
@@ -68,6 +71,7 @@ module.exports = [
       { id: "T2", t: "Admin tool moves test merchants into real settlement", sym: "Sandbox captures paid out as real money.", how: "Audit.", cause: "Recompute cleared test_mode when it saw no open authorizations.", fix: "Removed the flag change.", ver: "adminMerchantsRecompute.fix.test.ts.", data: "Merchants flipped earlier need checking by hand." },
       { id: "T3", t: "Recompute always reports 0 open authorizations", sym: "Wrong count in the console.", how: "Found while fixing T2.", cause: "Counted inside a query that excludes authorized rows.", fix: "Separate count query.", ver: "transactionStatusRecompute.fix.test.ts.", data: NONE },
       { id: "T4", t: "Bad polling interval crashes the daemon", sym: "Daemon panics at start.", how: "Follow-up review.", cause: "No range check before time.NewTicker.", fix: "Reject out-of-range intervals at config load.", ver: "config/poll_interval_fix_test.go.", data: NONE },
+      { id: "T5", t: "Admin settlement page pre-fills the wrong (UTC) date", sym: "Form defaults to the wrong business day around midnight.", how: "Final code scan.", cause: "Browser-local date arithmetic combined with UTC formatting.", fix: "Derive Bahrain's calendar date and subtract one day, whatever the browser's time zone.", ver: "SettlementPage.t5.fix.test.ts (Bahrain midnight, leap day, year end).", data: NONE },
     ],
   },
   {
@@ -133,19 +137,15 @@ module.exports = [
 
 // Open items from the 2026-10-30 scan: not fixed.
 module.exports.open = [
-  ["S13", "High", "Any merchant can read another merchant's transactions via the reporting filter", "Check the caller is the split parent"],
   ["S14", "High", "SSRF through webhook URLs (no private-IP block, redirects followed, body echoed)", "Block private ranges at create and send; no redirects"],
   ["S15", "High", "Compose runs the API in development mode; no .dockerignore (secret and .git in image)", "Production env, .dockerignore, non-root user"],
   ["S16", "Medium", "OTP guess limit resets on every login; no rate limiting", "Per-user and per-IP limits"],
   ["S17", "Medium", "Public pay endpoint allows unlimited card testing", "Rate limit and attempt cap per link"],
   ["S18", "Medium", "Unsalted hash of card number, CVV and expiry stored", "Stop storing CVV; keyed hash"],
-  ["S19", "Medium", "export-summary has no auth check; disabled admins keep impersonation; no session rotation after OTP", "Add checks; rotate session"],
-  ["M21", "Low", "TypeScript and Go apply the discount in a different order (1 fil apart)", "One shared order"],
   ["R10", "Medium", "Reporting consumer can skip outbox events (cursor by id, not commit order)", "Cursor on commit order"],
   ["X15", "Medium", "Admin 'Rebuild analytics' double-counts unconsumed events", "Rebuild up to the watermark"],
   ["D6", "Medium", "Compose gives the API no settlement token", "Set the token"],
   ["X16", "Low", "Payout trends can stay 'closed' forever", "Handle settlement.paid"],
-  ["T5", "Low", "Admin settlement page pre-fills the UTC date", "Use Bahrain date"],
   ["X17", "Low", "Call to a Go endpoint that doesn't exist; docs name env vars nothing reads", "Remove or implement"],
   ["X18", "Low", "Dead code (v1/ tree and others)", "Delete"],
   ["V1", "Medium", "npm audit: 3 high, 5 moderate", "Upgrade"],

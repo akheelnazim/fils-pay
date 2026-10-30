@@ -90,22 +90,21 @@ children.push(
   new Paragraph({ spacing: { after: 600 }, children: [new TextRun({ text: "Submission document · Team LGTM", size: 32, color: "3B4D5C" })] }),
   H2("Team"),
   table(["Member", "Owned"], [
-    ["[[Member 1 name]]", "[[What they owned, e.g. security and money fixes, FP-300 refunds]]"],
-    ["[[Member 2 name]]", "[[What they owned]]"],
-    ["[[Member 3 name]]", "[[What they owned]]"],
+    ["Akheel Nazim", "Auditing, finding the repo's planted traps, designing the AI workflow, fixes"],
+    ["Ahmed Khalaf", "Fixes, deployment, load testing, UI fixes"],
   ], [3000, CW - 3000]),
   gap(),
   H2("Live URLs"),
   table(["What", "URL"], [
-    ["Checkout", "[[https://… checkout URL]]"],
-    ["Merchant dashboard", "[[https://… dashboard URL]]"],
-    ["Admin console", "[[https://… admin URL]]"],
-    ["Public API", "[[https://… API base URL]]"],
+    ["Checkout", "https://merchant.139-59-92-10.sslip.io/pay/<link token>"],
+    ["Merchant dashboard", "https://merchant.139-59-92-10.sslip.io/"],
+    ["Admin console", "https://admin.139-59-92-10.sslip.io/"],
+    ["Public API", "https://api.139-59-92-10.sslip.io/ (e.g. /healthz, /v1/…)"],
   ], [3000, CW - 3000]),
   gap(),
   H2("Repository"),
   table(["What", "Value"], [
-    ["Public fork", "[[https://github.com/<account>/fils-pay]]"],
+    ["Public fork", "https://github.com/akheelnazim/fils-pay"],
     ["Last commit before the deadline", "[[commit ID]]"],
   ], [3000, CW - 3000]),
   new Paragraph({ children: [new PageBreak()] }),
@@ -116,9 +115,9 @@ children.push(
 // 1. Summary
 children.push(
   H1("1. Summary"),
-  P(`**What we found.** We audited the FilsPay handover with AI and checked every claim in the code. We confirmed 109 findings: 85 fixed, 1 partly fixed (M19), and ${openCount} recorded but not fixed (X14 and 22 from a final scan). The 87 we worked on fall into security holes (12), money-out races and duplicates (8), money maths that lost or invented fils (20), settlement timing (4), scripts and UI (13), deploy blockers (5), test-suite faults (3), and 22 gaps in the half-built refund feature.`),
+  P(`**What we found.** We audited the FilsPay handover with AI and checked every claim in the code. We confirmed 109 findings: 88 fixed, 2 partly fixed (M19, S19), and ${openCount} recorded but not fixed. By class: security holes (19), money-out races and duplicates (9), money maths that lost or invented fils (21), settlement timing (5), scripts and UI (17), deploy blockers (6), test-suite faults (3), 22 gaps in the half-built refund feature, and 7 dependency and performance items.`),
   P("**What we fixed.** Every security, race, money and timing bug from the audit, plus the ones our reviewer agents and later scans found. Each fix has its own failing test written first, a reviewer agent's sign-off, an entry in `fix-docs/FIXLOG.md` and one commit on `main`. We finished FP-300 (refunds): both refund addresses work, refunds are capped at what was captured, safe under concurrency, reverse the right fee, reach the webhook, reduce the next payout, show in reports, and keep reconciliation at a zero gap. An end-to-end test proves it."),
-  P("**What we left alone.** Anything that needs production data or a Finance decision: the March sweep's production postings (X14), correcting historical payout estimates (M19), journaling past scheme residue (M14), and rotating the leaked acquirer secret (S11). We never ran a `scripts/` one-off against data. We kept every ADR's decision, even where the audit proposed breaking one (M9). 22 issues from a final scan (three of them high-severity security) are recorded with fixes proposed but not yet done."),
+  P("**What we left alone.** Anything that needs production data or a Finance decision: the March sweep's production postings (X14), correcting historical payout estimates (M19), journaling past scheme residue (M14), and rotating the leaked acquirer secret (S11). We never ran a `scripts/` one-off against data. We kept every ADR's decision, even where the audit proposed breaking one (M9). A final scan found 22 more issues; 4 are fixed (S13, M21, T5 and part of S19) and 18 are recorded with fixes proposed, two of them high-severity security (S14, S15)."),
   P("**Main root cause.** FilsPay's safeguards lived in documents, comments and postmortems instead of in the code and the database. The ADRs required integer fils, but TypeScript and Go each rewrote money maths with floats and cents. Postmortems marked unique indexes and locks as \"done\" that were never built. Tenant checks sat on the route but not on the query. The repo's own AI instruction files were planted with false rules. Most findings trace back to a rule that was written down but never enforced."),
 );
 
@@ -128,9 +127,9 @@ children.push(
   H2("Services and ports"),
   new Paragraph({ children: [new ImageRun({ type: "png", data: fs.readFileSync(path.join(__dirname, "architecture.png")), transformation: { width: 620, height: 349 } })], spacing: { after: 120 } }),
   table(["Service", "Port", "Faces the internet?", "Notes"], [
-    ["apps/web (checkout + merchant dashboard)", "5173 (dev) / [[prod port]]", "Yes, through the proxy", "Static React build"],
-    ["apps/admin (ops console)", "5174 (dev) / [[prod port]]", "Yes, through the proxy [[or VPN-only]]", "Staff only"],
-    ["apps/api (Fastify)", "3000", "Yes, through the proxy", "`/healthz`, `/readyz`"],
+    ["apps/web (checkout + merchant dashboard)", "5173 (dev); merchant.139-59-92-10.sslip.io", "Yes, through the proxy", "Static React build"],
+    ["apps/admin (ops console)", "5174 (dev); admin.139-59-92-10.sslip.io", "Yes, through the proxy", "Staff only"],
+    ["apps/api (Fastify)", "3000; api.139-59-92-10.sslip.io", "Yes, through the proxy", "`/healthz`, `/readyz`"],
     ["apps/settlement (Go daemon)", "8091 internal API", "No", "Called by the API with an internal token"],
     ["apps/reporting (worker)", "none", "No", "Reads the outbox"],
     ["PostgreSQL 16", "5432", "No (must not be published)", "One database"],
@@ -143,7 +142,7 @@ children.push(
   H2("Where secrets come from"),
   B("Secrets are no longer committed (fix S11): `ops/.env.docker` is ignored, and `ops/.env.docker.example` lists every setting with placeholders."),
   B("Required in production: `WEBHOOK_SECRET_ENCRYPTION_KEY` (32 bytes), `ACQUIRER_CALLBACK_SIGNING_SECRET`, `SETTLEMENT_INTERNAL_TOKEN`, `DATABASE_URL`, `CORS_ORIGINS`."),
-  B("[[On the server: where they are stored (platform secret store / env file with restricted permissions) and how they reach the containers]]"),
+  B("On the server they come from an env file with restricted permissions, outside the repo."),
   B("Known gap: compose has no `env_file`, so `.env.docker` is not loaded automatically (noted under D4 and scan item S15)."),
   H2("Health checks and restart policies"),
   B("Postgres: `pg_isready` health check in compose; every service waits for it."),
@@ -203,17 +202,17 @@ for (const g of F) {
 }
 children.push(
   H2(`4.${F.length + 1} Open findings from the final scan (not fixed)`),
-  P("A read-only scan after FP-300 found these. They are tracked in FIXLOG and described with evidence in `fix-docs/scan-2026-10-30.md`. X14 (above) is also open."),
+  P("A read-only scan after FP-300 found 22 issues. S13, M21, T5 and part of S19 are fixed (entries above); these 18 are still open. They are tracked in FIXLOG and described with evidence in `fix-docs/scan-2026-10-30.md`. X14 (above) is also open."),
   table(["ID", "Severity", "Finding", "Proposed fix"], F.open, [700, 1000, 5000, CW - 6700]),
 );
 
 // Root causes
 const RC = [
-  ["Money rules on paper, not in code", "M1, M2, M4, M5, M6, M12, M13, M16, M17 · open: M21", "ADR-0001 says integer fils, but money maths lives in two languages. The shared `packages/money` exists only for TypeScript; Go and several TS paths rewrote it with floats, float32, cents parsers, REAL/INTEGER columns and decimal copies. Nothing (lint, types or schema) stopped them."],
+  ["Money rules on paper, not in code", "M1, M2, M4, M5, M6, M12, M13, M16, M17, M21", "ADR-0001 says integer fils, but money maths lives in two languages. The shared `packages/money` exists only for TypeScript; Go and several TS paths rewrote it with floats, float32, cents parsers, REAL/INTEGER columns and decimal copies. Nothing (lint, types or schema) stopped them."],
   ["Check-then-act with no database backstop", "R1, R2, R3, R5, R6, S9, F3, X4, M15, X2", "Uniqueness and limits were enforced by reading first and writing later. The postmortems claimed the backstops (a `processed_events` table, the FP-202 unique index, the FP-208 advisory lock) but none existed. Fix pattern: an atomic conditional `UPDATE … RETURNING` or `SELECT … FOR UPDATE`, plus a unique index."],
-  ["Authorization checked at the route, not in the query", "S1, S2, S3, S8, S12, F2 · open: S13, S19", "Routes checked the merchant in the URL or that an admin was logged in, while data functions took a bare id. Any id from another tenant then worked. Fix pattern: scope every query by the caller's merchant, and check roles server-side."],
+  ["Authorization checked at the route, not in the query", "S1, S2, S3, S8, S12, S13, S19, F2", "Routes checked the merchant in the URL or that an admin was logged in, while data functions took a bare id. Any id from another tenant then worked. Fix pattern: scope every query by the caller's merchant, and check roles server-side."],
   ["Trusting what comes from outside", "S4, S5, S6, S7, S11, X12, X13 · open: S14, S17", "Client clocks, unsigned callbacks, signatures over the wrong bytes, keys that outlive rotation, secrets in git. Security defaults were \"optional\"."],
-  ["Two copies of one rule drift apart", "M3, M7, M10, M11, M14, T1, F9, F12, F15, X3, D4", "Displays and reports re-derived figures instead of reading what billing recorded (fee shown vs charged, summary vs payouts). Docs and comments described behaviour the code didn't have: ADR-0002 marked \"implemented\" with no code, CHANGELOG saying the export streams, a comment saying CORS was locked down. UTC was used where the rule is the Bahrain day."],
+  ["Two copies of one rule drift apart", "M3, M7, M10, M11, M14, M21, T1, T5, F9, F12, F15, X3, D4", "Displays and reports re-derived figures instead of reading what billing recorded (fee shown vs charged, summary vs payouts). Docs and comments described behaviour the code didn't have: ADR-0002 marked \"implemented\" with no code, CHANGELOG saying the export streams, a comment saying CORS was locked down. UTC was used where the rule is the Bahrain day."],
   ["Operational tools that act without guards", "X1, X2, X5, T2, M8, M9, X6, X8, D1, D2, D5", "Scripts and console buttons wrote money data with no idempotency, no dry run, and no check of what state they were touching (paid batches, sandbox merchants, every hold)."],
   ["A feature left half-built", "F1–F22", "Refunds had tables, helpers and a UI drawer, but the route returned 501, the insert always failed, and settlement, reporting, webhooks and reconciliation didn't know refunds existed. \"Just wire it\" would have shipped every gap above."],
 ];
@@ -236,10 +235,10 @@ const DEC = [
   ["Did not rotate the acquirer secret or rewrite git history (S11)", "Needs the acquirer, and a force-push would break collaborators' clones.", "Rotate with the acquirer before go-live; treat the old secret as public.", "Open"],
   ["Smallest fix over the proper fix", "Brief: a small fix that works beats a rewrite. Bigger fixes are recorded per entry in FIXLOG.", "e.g. S4 drop `submittedAt` from the API, S6 raw-body verify, T1 fix inside `BusinessDayWindow`.", "Recorded"],
   ["Refunds larger than the day's net roll to the next batch (F8)", "A payout can never go negative and the debt is not lost.", "Strict ordering would hold later refunds back; separate refund column on batches.", "Closed"],
-  ["Final-scan findings not fixed", "Found at the end; each needs the full test-first workflow.", "Fix S13, S14, S15 before real traffic.", "Open (22)"],
+  ["Final-scan findings not fixed", "Found at the end; each needs the full test-first workflow.", "Fix S14 (SSRF) and S15 (compose in dev mode) before real traffic.", "Open (18)"],
   ["Payment-link recovery lookups are in-memory (R8)", "The acquirer simulator keeps no durable record.", "A real acquirer inquiry API or a stored record.", "Open"],
   ["Refund summary view isn't refreshed automatically (F15)", "Nothing in the code refreshes it, despite its comment.", "Refresh from the reporting worker.", "Open"],
-  ["Deployment and load test", "[[status at submission]]", "[[ ]]", "[[ ]]"],
+  ["Load test", "[[status at submission]]", "[[ ]]", "[[ ]]"],
 ];
 children.push(
   H2(`4.${F.length + 3} Decisions and open risks`),
