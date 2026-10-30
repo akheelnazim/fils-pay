@@ -90,6 +90,7 @@ the action. Credits above the threshold need a second approver.
 | `SETTLEMENT_INTERNAL_TOKEN` | api, settlement | `dev-token` in dev |
 | `ACQUIRER_CALLBACK_REQUIRE_SIGNATURE` | api | `true` |
 | `FEATURE_ASYNC_CLOSE` | settlement | `0` |
+| `CORS_ORIGINS` | api | `http://localhost:5173,http://localhost:5174` in dev; none in production (set it to the web and admin origins) |
 
 The API is sized for 0.5 vCPU / 512 MB. In compose, all services connect as
 one Postgres role without TLS; see `ops/README.md`.

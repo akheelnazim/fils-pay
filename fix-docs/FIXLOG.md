@@ -83,7 +83,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | D1 | Migration 0054 references missing table | `db/migrations/` | fixed | `fix(D1)` |
 | D2 | Migration 0055 uses non-existent columns | `db/migrations/` | fixed | `fix(D2)` |
 | D3 | Dev webhook key fallback is 34 bytes, not 32 | `apps/api/src/config.ts` | fixed | `fix(D3)` |
-| D4 | API has no CORS; dashboard can't call it | open | |
+| D4 | API has no CORS; dashboard can't call it | `apps/api/src/plugins/cors.ts` | fixed | `fix(D4)` |
 | D5 | Dockerfiles referenced by compose are missing | open | |
 
 ### FP-300 refunds (feature, last) (F)
@@ -548,6 +548,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: a fresh dev or test setup fails at start with "must base64-decode to exactly 32 bytes, got 34" until someone generates a key by hand.
 - Fix: the fallback is a 32-byte dev-only string. Production still requires the variable. Nothing was ever encrypted with the old value (it could not load), so no stored secrets change.
 - Test: `config.fix.test.ts` (development and test boot with a 32-byte key, failed before with "got 34"; production still refuses; an explicit key wins) · ADR: none
+
+#### D4 API sends no CORS headers; the dashboard can't call it
+- Where: `apps/api/src/plugins/cors.ts`
+- What's wrong: the merchant dashboard (`apps/web`, :5173) and the ops console (`apps/admin`, :5174) call the API on :3000 with `credentials: "include"`, but the API answered no CORS, so the browser blocked every call (the MK comment "CORS is locked to the two origins in config" was false: there was no CORS at all).
+- Why: no CORS handling was ever registered (`@fastify/cors` isn't a dependency).
+- What it breaks: neither screen works in a browser unless served from the API's own origin.
+- Fix: a small `corsPlugin` (no new dependency) allows exactly `config.corsOrigins` with credentials, `Vary: Origin`, and answers preflights 204 with the methods and the requested headers. `CORS_ORIGINS` (comma-separated) sets the list; default is the two local dev origins outside production and none in production. Documented in ARCHITECTURE's settings table. · Proper fix (if different): `@fastify/cors`, or serve web/admin and the API from one origin behind the deployment's reverse proxy (no CORS needed).
+- Test: `plugins/cors.fix.test.ts` (dashboard and console origins allowed with credentials, preflight 204 with methods/headers, other origins get nothing, `CORS_ORIGINS` replaces defaults, production empty by default; five failed before) · ADR: none
 
 ### FP-300 refunds (feature, last) (F)
 

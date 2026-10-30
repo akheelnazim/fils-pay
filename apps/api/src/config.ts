@@ -24,6 +24,11 @@ export interface Config {
   otpMaxAttempts: number;
   otpDevExpose: boolean;
 
+  /** D4: browser origins allowed to call the API with credentials
+   *  (CORS_ORIGINS, comma-separated). Defaults to the local web and admin
+   *  dev servers outside production, and to none in production. */
+  corsOrigins: string[];
+
   argon2MemoryKib: number;
   argon2TimeCost: number;
   argon2Parallelism: number;
@@ -212,6 +217,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     otpCodeLength: parseIntEnv(env.OTP_CODE_LENGTH, 6),
     otpMaxAttempts: parseIntEnv(env.OTP_MAX_ATTEMPTS, 5),
     otpDevExpose: parseBoolEnv(env.OTP_DEV_EXPOSE, nodeEnv !== "production"),
+    corsOrigins: env.CORS_ORIGINS
+      ? env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter((o) => o !== "")
+      : nodeEnv === "production"
+        ? []
+        : ["http://localhost:5173", "http://localhost:5174"],
 
     argon2MemoryKib: parseIntEnv(env.ARGON2_MEMORY_KIB, 19_456),
     argon2TimeCost: parseIntEnv(env.ARGON2_TIME_COST, 2),
