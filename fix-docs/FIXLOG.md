@@ -118,6 +118,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F9 | Reporting has no refund case; the daily rollup has no refund columns and buckets by UTC | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `feat(FP-300/F9)` |
 | F15 | `refund_merchant_summary` joined on the wrong id, so it was always empty | `db/migrations/0083_refund_merchant_summary_join.sql` | fixed | `feat(FP-300/F15)` |
 | F10 | Reconciliation's pending figure leaves out refunds, so they show as a gap | `apps/api/src/settlement/query.ts` | fixed | `feat(FP-300/F10)` |
+| F11 | Transaction responses lack `refundedFils` | `apps/api/src/transactions/serialize.ts` | fixed | `feat(FP-300/F11)` |
 
 ### Test suite (Q)
 
@@ -714,6 +715,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it breaks: no refunds at all, from the API or the dashboard.
 - Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
 - Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
+
+#### F11 Transaction responses lack refundedFils
+- Where: `apps/api/src/transactions/serialize.ts`, `apps/web/src/types.ts`, `RefundDrawer.tsx`
+- What's wrong: no response carried how much of a payment was already refunded, so clients (and the dashboard drawer, which capped the amount at `capturedFils`) could not tell what is still refundable.
+- Why: `serializeTransaction` left the field out ("TODO add once 0043 is applied everywhere"); the web DTO comment claiming it existed was wrong.
+- What it breaks: after a partial refund the drawer offered the full captured amount; the API then answered 422.
+- Fix: `refundedFils` added to `TransactionRow`/`TransactionDto`/`serializeTransaction`; every route shares it (authorize, capture, void, detail and list all use `SELECT *`/`RETURNING *`, no query change). Web DTO gets the field; the drawer's cap and label use `capturedFils − refundedFils`. Note: `refundedFils` includes a refund still waiting on the acquirer (F3 reserves it up front). · Proper fix (if different): same.
+- Test: `transactions/serialize.f11.fix.test.ts` (string and number mapping; authorize, detail and list responses carry it, 4 000 after a refund of 4 000). Failed before: `undefined !== 0` · ADR: none
 
 #### F10 Reconciliation shows every refund as a gap
 - Where: `apps/api/src/settlement/query.ts`
