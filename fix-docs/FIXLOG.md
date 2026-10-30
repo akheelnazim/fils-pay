@@ -51,7 +51,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M9 | Recalculate balances button 135K → 7K (FP-203) | `apps/settlement/internal/ledger/refresh.go` | fixed | `fix(M9)` |
 | M10 | Settlement summary double-counts multi-capture | open | |
 | M11 | Reconciliation pending uses `merchants.mdr_bps` | open | |
-| M12 | `parsePromotionalDiscountFils` uses float × 100 | open | |
+| M12 | `parsePromotionalDiscountFils` uses float × 100 | `apps/api/src/payments/discountAdjustment.ts` | fixed | `fix(M12)` |
 | M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | open | |
 | M14 | Scheme residue never journaled (ADR-0002) | open | |
 | M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | open | |
@@ -379,6 +379,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: a closed 100.000 BD batch with a 2.250 BD fee showed 100.000 BD payable instead of 97.750; an already-paid batch kept showing as owed. Support then "fixed" balances with Adjust (FP-203), which the next rebuild wiped.
 - Fix: rebuild from `SUM(net_payout_fils)` of `settlement_batches` with `status = 'closed'`, still settled data as ADR-0004 requires (the audit's swap to the ledger walk is rejected by the ADR). Updated `internalapi/server_test.go`, which asserted the gross 12000 instead of the net 11700. The 0054 view is now unused. · Proper fix (if different): same; the incremental cache's own drift (paid batches in Recalculate MDR, split payouts) is M8/M3/M15.
 - Test: `ledger/refresh_fix_test.go` (net not gross, paid and open excluded, all-paid = 0, recalculated fee, two batches with no cache row; five failed before) · ADR: 0004, 0006 unchanged
+
+#### M12 Unused promotional-discount parser reads BD as cents
+- Where: `apps/api/src/payments/discountAdjustment.ts`
+- What's wrong: `parsePromotionalDiscountFils` parsed a BD string with `parseFloat` and multiplied by 100.
+- Why: cents arithmetic on a 3-decimal currency, through a float (breaks ADR-0001).
+- What it breaks: nothing yet (no caller), but wired up it would book "1.250" BD as 125 fils, a tenth of the discount.
+- Fix: deleted it (and its now-unused `BadRequestError` import), as the audit says; `parseBhdToFils` in `packages/money` is the parser to use. · Proper fix (if different): same.
+- Test: `payments/discountAdjustment.fix.test.ts` (the export is gone, failed before; `parseBhdToFils` gives 1250 for "1.250", 1 for "0.001", rejects 4 decimals) · ADR: 0001
 
 ### Settlement timing and test merchants (T)
 
