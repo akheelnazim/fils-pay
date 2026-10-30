@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { toFils } from "@filspay/money";
 import { authorizeTransaction } from "../payments/authorize.js";
 import { captureTransaction } from "../payments/capture.js";
+import { voidTransaction } from "../payments/void.js";
 import type { AcquirerSimulator, SimulatedCardInput } from "../acquirer/types.js";
 
 export interface PayPaymentLinkInput {
@@ -22,6 +23,8 @@ interface ClaimedLinkRow {
   merchant_id: string;
   amount_fils: string | number;
   reference: string | null;
+  /** reserved_at as text: exact, so finalize/release only ever match this request's own reservation (R1). */
+  reservation: string;
 }
 
 interface LinkStatusRow {
@@ -73,7 +76,7 @@ export async function payPaymentLink(
              OR (status = 'reserved' AND reserved_at < now() - ($2 || ' seconds')::interval)
             )
         AND expires_at > $3
-      RETURNING id, merchant_id, amount_fils, reference`,
+      RETURNING id, merchant_id, amount_fils, reference, reserved_at::text AS reservation`,
     [input.token, config.paymentLinkReservationTimeoutSeconds, expiryCheckTime],
   );
 
@@ -88,6 +91,7 @@ export async function payPaymentLink(
     amountFils: toFils(Number(claimedRow.amount_fils)),
     reference: claimedRow.reference,
   };
+  let reservation = claimedRow.reservation;
 
   // Step 2 — authorize.
   // am: keys include link.id so two links can never collide on idempotency. good
@@ -104,7 +108,7 @@ export async function payPaymentLink(
   });
 
   if (authResult.statusCode !== 201) {
-    await releaseReservation(pool, link.id);
+    await releaseReservation(pool, link.id, reservation);
     return {
       statusCode: authResult.statusCode,
       body: { stage: "authorize", ...(authResult.body as Record<string, unknown>) },
@@ -112,6 +116,31 @@ export async function payPaymentLink(
   }
 
   const txnId = (authResult.body as { id: string }).id;
+
+  // R1: a slow authorize can outlive the reservation timeout and let another
+  // buyer re-claim the link. Confirm (and refresh) our own reservation before
+  // any money moves; if it is gone, void our authorization instead of capturing.
+  const refreshed = await pool.query<{ reservation: string }>(
+    `UPDATE payment_links SET reserved_at = now()
+      WHERE id = $1 AND status = 'reserved' AND reserved_at = $2::timestamptz
+      RETURNING reserved_at::text AS reservation`,
+    [link.id, reservation],
+  );
+  const refreshedRow = refreshed.rows[0];
+  if (!refreshedRow) {
+    try {
+      const voided = await voidTransaction(pool, {
+        transactionId: txnId,
+        merchantId: link.merchantId,
+        actor: { type: "system", id: link.id },
+      });
+      if (voided.statusCode !== 200) throw new Error(`void answered ${voided.statusCode}`);
+    } catch (err) {
+      console.error(`payPaymentLink: could not void authorization ${txnId} after losing link ${link.id}`, err);
+    }
+    return { statusCode: 409, body: { stage: "capture", error: "payment_link_processing" } };
+  }
+  reservation = refreshedRow.reservation;
 
   // NOTE: discountAdjustment is applied by the transactions route only, not here — FH
   // MK: it's applied for both now (moved into capture.ts in July)
@@ -128,7 +157,7 @@ export async function payPaymentLink(
   });
 
   if (captureResult.statusCode !== 200) {
-    await releaseReservation(pool, link.id);
+    await releaseReservation(pool, link.id, reservation);
     return {
       statusCode: captureResult.statusCode,
       body: { stage: "capture", ...(captureResult.body as Record<string, unknown>) },
@@ -145,30 +174,21 @@ export async function payPaymentLink(
   }>(
     `UPDATE payment_links
         SET status = 'paid', paid_at = now(), transaction_id = $2, reserved_at = NULL
-      WHERE id = $1 AND status = 'reserved'
+      WHERE id = $1 AND status = 'reserved' AND reserved_at = $3::timestamptz
       RETURNING id, paid_at`,
-    [link.id, txnId],
+    [link.id, txnId, reservation],
   );
 
   const finalized = finalizeResult.rows[0];
-  // FH: this IS reachable — if capture takes past the reservation timeout a second request re-claims,
-  // pays and finalizes first; we land here, answer 200, and the card was charged twice
-  // MK: authorize+capture is under a second. 60s can't happen. unreachable
   if (!finalized) {
-    // Should be unreachable in normal operation (this request is the only
-    // holder of the reservation). The acquirer-side capture genuinely
-    // succeeded and money moved; failing to *record* that fact against the
-    // link is a data-consistency bug to surface loudly, not a reason to
-    // tell a customer whose card was actually charged that their payment
-    // failed.
+    // R1: capture outlived our reservation and another buyer took the link.
+    // This buyer's card was charged but the link belongs to the other payment:
+    // never answer "paid"; surface the charge for a refund (no automatic
+    // refund until FP-300).
     console.error(
-      `payPaymentLink: finalize UPDATE matched 0 rows for link ${link.id} after a successful capture ` +
-        `(transaction ${txnId}) — invariant violation, investigate`,
+      `payPaymentLink: lost the reservation on link ${link.id} after capturing transaction ${txnId}; refund needed`,
     );
-    return {
-      statusCode: 200,
-      body: { status: "paid", transactionId: txnId, amountFils: link.amountFils, paidAt: new Date().toISOString() },
-    };
+    return { statusCode: 409, body: { error: "payment_link_reservation_lost", transactionId: txnId } };
   }
 
   return {
@@ -187,10 +207,12 @@ export async function payPaymentLink(
  * 'reserved'` for the same reason as the finalize UPDATE: this request
  * only ever releases the reservation it itself holds.
  */
-async function releaseReservation(pool: Pool, linkId: string): Promise<void> {
-  await pool.query(`UPDATE payment_links SET status = 'active', reserved_at = NULL WHERE id = $1 AND status = 'reserved'`, [
-    linkId,
-  ]);
+async function releaseReservation(pool: Pool, linkId: string, reservation: string): Promise<void> {
+  await pool.query(
+    `UPDATE payment_links SET status = 'active', reserved_at = NULL
+      WHERE id = $1 AND status = 'reserved' AND reserved_at = $2::timestamptz`,
+    [linkId, reservation],
+  );
 }
 
 /**

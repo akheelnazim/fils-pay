@@ -30,7 +30,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
-| R1 | Payment link charged twice (2026-05-14) | open | |
+| R1 | Payment link charged twice (2026-05-14) | `apps/api/src/paymentLinks/pay.ts` | fixed | `fix(R1)` |
 | R2 | Duplicate acquirer callback notes (FP-201) | `apps/api/src/acquirer/callbacks.ts` | on hold (fix proposed) | |
 | R3 | Duplicate payout notifications (2026-08-21) | `apps/settlement/internal/settlement/payout_notify.go` | on hold (fix proposed) | |
 | R5 | Adjustment CSV importable twice | open | |
@@ -272,6 +272,14 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `routes/adminCredits.fix.test.ts` (support create returned 201 before, 403 now; finance still 201) · ADR: none
 
 ### Races and duplicates (R)
+
+#### R1 Payment link charged twice (incident 2026-05-14)
+- Where: `apps/api/src/paymentLinks/pay.ts`
+- What's wrong: two buyers paying one link could both be charged, and a buyer could be told "paid" for a link recorded against someone else's transaction.
+- Why: a link `reserved` past the timeout can be re-claimed; finalize and release only checked `status = 'reserved'` (not whose reservation), so buyer A could finalize buyer B's claim; and a finalize that matched 0 rows still answered 200 "paid". The postmortem blamed callbacks; FP-202's constraint was never added.
+- What it breaks: double charges on one invoice (the May incident), and links whose recorded payment is not the one the buyer was told succeeded.
+- Fix: the claim returns `reserved_at::text` as a reservation token; release and finalize match it; before capture the payer refreshes its own reservation and, if it has been taken over, voids its authorization and answers 409 (nobody charged); a finalize miss after capture answers 409 `payment_link_reservation_lost` with the transaction id and logs it for a refund. `voidTransaction` accepts a `system` actor (as capture does). Checkout shows a terminal "charged, contact the merchant" message for that error. · Proper fix (if different): refund the lost capture automatically once FP-300 works; a `reservation_id` column instead of the timestamp token; a unique index so a link has at most one captured transaction (FP-202).
+- Test: `paymentLinks/pay.r1.fix.test.ts` (lost during authorize → voided + 409, lost during capture → 409 not "paid", no cross-finalize, normal path; three failed before) · ADR: none
 
 #### R2 Duplicate acquirer callback notes (FP-201) — on hold, fix proposed
 - Where: `apps/api/src/acquirer/callbacks.ts`

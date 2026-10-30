@@ -72,6 +72,11 @@ export function CheckoutPage() {
           setPayState({ kind: "declined", message: "The acquirer is temporarily unavailable. Please try again.", retryable: true });
         } else if (statusCode === 409 && body.error === "payment_link_already_paid") {
           setPayState({ kind: "terminal", message: "This invoice has already been paid." });
+        } else if (statusCode === 409 && body.error === "payment_link_reservation_lost") {
+          setPayState({
+            kind: "terminal",
+            message: "This link was paid by another payment at the same time. Your card was charged; please contact the merchant for a refund.",
+          });
         } else if (statusCode === 409 && body.error === "payment_link_canceled") {
           setPayState({ kind: "terminal", message: "This payment link is no longer available." });
         } else if (statusCode === 409) {
