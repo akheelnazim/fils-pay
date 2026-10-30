@@ -96,6 +96,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | --- | --- | --- | --- | --- |
 | FP-300 | Refunds (F1–F13) | open | |
 | F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F14)` |
+| F1 | Refundable is authorized − refunded, so a partial capture can refund money never charged | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F1)` |
 
 ### Test suite (Q)
 
@@ -611,6 +612,14 @@ Keep each entry short. One per bug, under its class heading:
 ### FP-300 refunds (feature, last) (F)
 
 Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
+
+#### F1 Refund more than was captured
+- Where: `apps/api/src/payments/processRefund.ts`
+- What's wrong: on a payment authorized for 10 000 fils and captured for 4 000, a refund of 5 000 succeeded, and a refund with no amount returned 10 000.
+- Why: the refundable amount was `amount_fils` (authorized) − `refunded_fils` instead of `captured_fils` − `refunded_fils`.
+- What it breaks: merchants could send cardholders money that was never taken from the card; the platform pays the difference.
+- Fix: `subtractFils(capturedFils, refundedFils)`. `refundValidation.test.ts` built its sample data the old way and called it "by design"; corrected. · Proper fix (if different): same.
+- Test: `payments/processRefund.f1.fix.test.ts` (5 000 on a 4 000 capture gives 422 with `refundableFils: 4000`; exactly 4 000 works and then nothing is left; no amount refunds 4 000). All three failed before · ADR: 0001
 
 #### F14 Every refund crashes on insert
 - Where: `apps/api/src/payments/processRefund.ts`
