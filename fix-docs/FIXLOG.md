@@ -35,7 +35,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | R2 | Duplicate acquirer callback notes (FP-201) | `apps/api/src/acquirer/callbacks.ts` | fixed | `fix(R2)` |
 | R3 | Duplicate payout notifications (2026-08-21) | `apps/settlement/internal/settlement/payout_notify.go` | fixed | `fix(R3)` |
 | R5 | Adjustment CSV importable twice | `apps/api/src/admin/adjustmentImport.ts` | fixed | `fix(R5)` |
-| R6 | A payment link reservation can expire during capture, allowing another charge | `apps/api/src/paymentLinks/pay.ts` | open | |
+| R6 | A payment link reservation can expire during capture, allowing another charge | `apps/api/src/paymentLinks/pay.ts` | fixed | `fix(R6)` |
+| R7 | Uncertain payment-link captures require manual reconciliation | `apps/api/src/paymentLinks/pay.ts`, `docs/RUNBOOK.md` | open | |
 
 ### Money correctness (M)
 
@@ -137,9 +138,16 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 #### R6 Reservation can expire while a payment-link capture is in progress
 - Where: `apps/api/src/paymentLinks/pay.ts`
-- What's wrong: after R1 refreshes the reservation, a capture can outlast the timeout and another buyer can claim the link. Both captures can succeed; the first buyer receives a 409 after being charged.
-- What it breaks: a single payment link can still charge two buyers. The code logs the lost capture for refund but does not automatically refund it.
-- Next: prevent takeover while capture is in flight or provide reliable automatic compensation; test the timeout during capture and recovery. R1 remains recorded as the earlier partial fix.
+- What's wrong: after R1 refreshed the reservation, a capture could outlast the timeout and another buyer could claim the link. Both captures could succeed; the first buyer received a 409 after being charged.
+- What it breaks: one link could charge two buyers; the losing capture was logged for a refund but not automatically refunded.
+- Fix: migration 0081 records the capture transaction on the reserved link before capture; a marked reservation cannot expire or be reclaimed. Definite declines release it; uncertain outcomes and crashes keep it for review. Public status remains processing, and checkout tells the buyer to contact the merchant when the outcome is uncertain. Existing R1 tests expecting takeover during capture were updated. · Proper fix: automated, idempotent recovery after checking the acquirer outcome (R7). Rollout must drain old API workers and reconcile pre-migration reservations; see `docs/RUNBOOK.md`.
+- Test: `paymentLinks/pay.r6.fix.test.ts` (slow capture allowed the second buyer to pay before: `200 !== 409`; now blocked; uncertain and thrown errors stay locked; definite decline releases) and `checkout/checkoutError.r6.fix.test.ts` (uncertain outcomes do not invite retry).
+
+#### R7 Uncertain payment-link captures need a recovery workflow
+- Where: `apps/api/src/paymentLinks/pay.ts`, `docs/RUNBOOK.md`
+- What's wrong: R6 keeps a link processing after an uncertain capture outcome or crash, but the application has no automated resolution or operator interface.
+- What it breaks: an affected link remains unavailable until support and Finance reconcile its transaction and acquirer outcome.
+- Next: add audited, idempotent recovery that checks the acquirer before finalizing or releasing the link. Never clear a marker or retry a charge based only on the local transaction status.
 
 #### M17 Integer overflow in Go rate and split calculations
 - Where: `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go`

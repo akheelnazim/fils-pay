@@ -46,6 +46,28 @@ already closed or paid is left alone.
 
 > **— unsigned:** re-running a date from before a merchant went live can settle their test captures. check go-live dates first
 
+## Payment-link capture is stuck processing
+
+An uncertain capture is held for review to prevent a second charge. Find the
+marked link and its transaction using a read-only query:
+
+```sql
+SELECT pl.id, pl.merchant_id, pl.reserved_at, pl.capture_transaction_id,
+       t.status, t.captured_fils, t.acquirer_reference
+  FROM payment_links pl
+  JOIN transactions t ON t.id = pl.capture_transaction_id
+ WHERE pl.capture_transaction_id IS NOT NULL;
+```
+
+Confirm the acquirer outcome and reconcile it with the ledger with Finance.
+Do not clear the marker or retry the charge until the outcome is established
+and an audited correction is agreed. Automated recovery is tracked as R7.
+
+When deploying migration 0081, pause new payment-link traffic, drain all old
+API workers and reconcile their in-flight or stale reservations before
+enabling the new workers. Old workers do not honor the new marker, and
+reservations created before the migration have no marker.
+
 ## A merchant's balance looks wrong
 
 `merchant_balances` is a cache. Recompute it:

@@ -160,32 +160,26 @@ test("R1: a buyer who loses the reservation during authorize is voided, not char
   assert.equal(captured.rowCount, 1, "exactly one transaction may be captured for this merchant");
 });
 
-test("R1: a buyer who loses the reservation during capture is not told paid", async () => {
+test("R6: an in-flight capture keeps its reservation even after the timeout", async () => {
   const link = await createPayableLink();
   let buyerB: PayPaymentLinkResult | undefined;
 
-  // Buyer A is mid-capture. Its reservation goes stale and buyer B pays in full first.
+  // The zero timeout would previously let buyer B re-claim during capture.
   const acquirerForA = hookedAcquirer({
     beforeCapture: async () => {
-      await makeReservationStale(link.linkId);
       buyerB = await payAs(link, acquirer);
     },
   });
   const buyerA = await payAs(link, acquirerForA);
 
   assert.ok(buyerB, "buyer B's payment must have run inside the hook");
-  assert.equal(buyerB.statusCode, 200, JSON.stringify(buyerB.body));
-  const bTransactionId = (buyerB.body as { transactionId: string }).transactionId;
-
-  assert.equal(buyerA.statusCode, 409, JSON.stringify(buyerA.body));
-  const bodyA = buyerA.body as { error?: string; transactionId?: string };
-  assert.equal(bodyA.error, "payment_link_reservation_lost", JSON.stringify(buyerA.body));
-  assert.ok(bodyA.transactionId, "buyer A's response must name its own transaction");
-  assert.notEqual(bodyA.transactionId, bTransactionId);
+  assert.equal(buyerB.statusCode, 409, JSON.stringify(buyerB.body));
+  assert.equal(buyerA.statusCode, 200, JSON.stringify(buyerA.body));
+  const aTransactionId = (buyerA.body as { transactionId: string }).transactionId;
 
   const state = await linkState(link.linkId);
   assert.equal(state.status, "paid");
-  assert.equal(state.transaction_id, bTransactionId);
+  assert.equal(state.transaction_id, aTransactionId);
 });
 
 test("R1: a buyer cannot finalize a reservation another buyer took over", async () => {
@@ -206,6 +200,11 @@ test("R1: a buyer cannot finalize a reservation another buyer took over", async 
   const state = await linkState(link.linkId);
   assert.equal(state.status, "reserved", "buyer A must not mark the link paid");
   assert.equal(state.transaction_id, null, "the link must not point at buyer A's transaction");
+  const marked = await pool.query<{ capture_transaction_id: string; captured_fils: string }>(
+    `SELECT pl.capture_transaction_id, t.captured_fils FROM payment_links pl JOIN transactions t ON t.id = pl.capture_transaction_id WHERE pl.id = $1`,
+    [link.linkId],
+  );
+  assert.equal(Number(marked.rows[0]!.captured_fils), 4750, "captured transaction must remain available for review");
 });
 
 test("R1: the normal single-buyer path still pays", async () => {

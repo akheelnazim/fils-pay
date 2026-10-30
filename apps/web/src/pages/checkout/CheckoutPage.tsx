@@ -4,6 +4,7 @@ import { formatBhd, toFils } from "@filspay/money";
 import { getPaymentLink, payPaymentLink } from "../../api/paymentLinks.js";
 import { ApiError } from "../../api/client.js";
 import type { PaymentLinkPublicDto, PayPaymentLinkResponse, SimulatedCardInput } from "../../types.js";
+import { checkoutFailure, type CheckoutFailure } from "./checkoutError.js";
 import "./CheckoutPage.css";
 
 type LoadState =
@@ -15,8 +16,7 @@ type PayState =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "success"; result: PayPaymentLinkResponse }
-  | { kind: "declined"; message: string; retryable: boolean }
-  | { kind: "terminal"; message: string };
+  | CheckoutFailure;
 
 const EMPTY_CARD: SimulatedCardInput = { pan: "", expiryMonth: 1, expiryYear: new Date().getFullYear() + 1, cvv: "" };
 
@@ -70,32 +70,7 @@ export function CheckoutPage() {
       const result = await payPaymentLink(token, { card, submittedAt }, idempotencyKey);
       setPayState({ kind: "success", result });
     } catch (err) {
-      if (err instanceof ApiError) {
-        const { statusCode, body } = err;
-        if (statusCode === 402) {
-          const stageLabel = body.stage === "capture" ? "Your payment could not be completed." : "Your card was declined.";
-          setPayState({ kind: "declined", message: stageLabel, retryable: true });
-        } else if (statusCode === 502) {
-          setPayState({ kind: "declined", message: "The acquirer is temporarily unavailable. Please try again.", retryable: true });
-        } else if (statusCode === 409 && body.error === "payment_link_already_paid") {
-          setPayState({ kind: "terminal", message: "This invoice has already been paid." });
-        } else if (statusCode === 409 && body.error === "payment_link_reservation_lost") {
-          setPayState({
-            kind: "terminal",
-            message: "This link was paid by another payment at the same time. Your card was charged; please contact the merchant for a refund.",
-          });
-        } else if (statusCode === 409 && body.error === "payment_link_canceled") {
-          setPayState({ kind: "terminal", message: "This payment link is no longer available." });
-        } else if (statusCode === 409) {
-          setPayState({ kind: "declined", message: "A payment is already being processed for this link. Please try again shortly.", retryable: true });
-        } else if (statusCode === 410) {
-          setPayState({ kind: "terminal", message: "This payment link has expired." });
-        } else {
-          setPayState({ kind: "declined", message: body.message ?? "Something went wrong. Please try again.", retryable: true });
-        }
-      } else {
-        setPayState({ kind: "declined", message: "Something went wrong. Please try again.", retryable: true });
-      }
+      setPayState(err instanceof ApiError ? checkoutFailure(err.statusCode, err.body) : checkoutFailure());
     }
   }
 
@@ -170,7 +145,7 @@ export function CheckoutPage() {
     return (
       <main className="checkout-page">
         <h1>Payment processing</h1>
-        <p>A payment is being processed for this link — please wait a moment and refresh.</p>
+        <p>A payment is being processed. If it doesn't complete, contact the merchant before trying again.</p>
       </main>
     );
   }

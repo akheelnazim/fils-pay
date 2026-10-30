@@ -50,9 +50,10 @@ export function expiryReferenceTime(submittedAt?: string): Date {
  * atomic conditional UPDATE, release the row lock immediately, run
  * authorize+capture with no lock held on payment_links at all, then
  * finalize with a second atomic conditional UPDATE keyed on still being in
- * the 'reserved' state. A short, configurable reservation timeout
- * self-heals a link stuck 'reserved' by a crash between claim and
- * finalize, with no sweep job.
+ * the 'reserved' state. A short, configurable timeout releases abandoned
+ * reservations before capture starts. Once capture starts, the transaction
+ * is recorded on the link and the reservation does not time out until the
+ * outcome is resolved.
  */
 export async function payPaymentLink(
   pool: Pool,
@@ -73,7 +74,7 @@ export async function payPaymentLink(
       WHERE token = $1
         AND (
              status = 'active'
-             OR (status = 'reserved' AND reserved_at < now() - ($2 || ' seconds')::interval)
+             OR (status = 'reserved' AND capture_transaction_id IS NULL AND reserved_at < now() - ($2 || ' seconds')::interval)
             )
         AND expires_at > $3
       RETURNING id, merchant_id, amount_fils, reference, reserved_at::text AS reservation`,
@@ -121,10 +122,10 @@ export async function payPaymentLink(
   // buyer re-claim the link. Confirm (and refresh) our own reservation before
   // any money moves; if it is gone, void our authorization instead of capturing.
   const refreshed = await pool.query<{ reservation: string }>(
-    `UPDATE payment_links SET reserved_at = now()
-      WHERE id = $1 AND status = 'reserved' AND reserved_at = $2::timestamptz
+    `UPDATE payment_links SET reserved_at = now(), capture_transaction_id = $3
+      WHERE id = $1 AND status = 'reserved' AND reserved_at = $2::timestamptz AND capture_transaction_id IS NULL
       RETURNING reserved_at::text AS reservation`,
-    [link.id, reservation],
+    [link.id, reservation, txnId],
   );
   const refreshedRow = refreshed.rows[0];
   if (!refreshedRow) {
@@ -149,35 +150,47 @@ export async function payPaymentLink(
   // transaction was just authorized for exactly link.amountFils and
   // nothing else could have touched it yet.
   const captureKey = `paylink:${link.id}:${input.idempotencyKey}:capture`;
-  const captureResult = await captureTransaction(pool, acquirer, {
-    transactionId: txnId,
-    merchantId: link.merchantId,
-    idempotencyKey: captureKey,
-    actor: { type: "system", id: link.id },
-  });
+  let captureResult: Awaited<ReturnType<typeof captureTransaction>>;
+  try {
+    captureResult = await captureTransaction(pool, acquirer, {
+      transactionId: txnId,
+      merchantId: link.merchantId,
+      idempotencyKey: captureKey,
+      actor: { type: "system", id: link.id },
+    });
+  } catch (err) {
+    console.error(`payPaymentLink: capture outcome unknown for transaction ${txnId}`, err);
+    return { statusCode: 502, body: { stage: "capture", error: "payment_link_capture_uncertain", transactionId: txnId } };
+  }
 
   if (captureResult.statusCode !== 200) {
-    await releaseReservation(pool, link.id, reservation);
-    return {
-      statusCode: captureResult.statusCode,
-      body: { stage: "capture", ...(captureResult.body as Record<string, unknown>) },
-    };
+    // Only a definite decline is safe to release. An error may have an
+    // unknown acquirer outcome, so keep the durable capture marker for review.
+    if (captureResult.statusCode === 402) {
+      await releaseReservation(pool, link.id, reservation);
+      return { statusCode: 402, body: { stage: "capture", ...(captureResult.body as Record<string, unknown>) } };
+    }
+    console.error(`payPaymentLink: capture outcome unknown for transaction ${txnId}, status ${captureResult.statusCode}`);
+    return { statusCode: 502, body: { stage: "capture", error: "payment_link_capture_uncertain", transactionId: txnId } };
   }
 
   // see incident 2026-05-14 — two customers charged on one link. root cause: the claim
   // MK: re-evaluation is exactly what makes it safe. the bug was in the web retry, closed
   // am: was it? FP-198 is still open
   // Step 4 — finalize.
-  const finalizeResult = await pool.query<{
-    id: string;
-    paid_at: Date;
-  }>(
-    `UPDATE payment_links
-        SET status = 'paid', paid_at = now(), transaction_id = $2, reserved_at = NULL
-      WHERE id = $1 AND status = 'reserved' AND reserved_at = $3::timestamptz
+  let finalizeResult;
+  try {
+    finalizeResult = await pool.query<{ id: string; paid_at: Date }>(
+      `UPDATE payment_links
+        SET status = 'paid', paid_at = now(), transaction_id = $2, reserved_at = NULL, capture_transaction_id = NULL
+      WHERE id = $1 AND status = 'reserved' AND reserved_at = $3::timestamptz AND capture_transaction_id = $2
       RETURNING id, paid_at`,
-    [link.id, txnId, reservation],
-  );
+      [link.id, txnId, reservation],
+    );
+  } catch (err) {
+    console.error(`payPaymentLink: could not finalize captured transaction ${txnId}`, err);
+    return { statusCode: 502, body: { stage: "capture", error: "payment_link_capture_uncertain", transactionId: txnId } };
+  }
 
   const finalized = finalizeResult.rows[0];
   if (!finalized) {
@@ -209,7 +222,7 @@ export async function payPaymentLink(
  */
 async function releaseReservation(pool: Pool, linkId: string, reservation: string): Promise<void> {
   await pool.query(
-    `UPDATE payment_links SET status = 'active', reserved_at = NULL
+    `UPDATE payment_links SET status = 'active', reserved_at = NULL, capture_transaction_id = NULL
       WHERE id = $1 AND status = 'reserved' AND reserved_at = $2::timestamptz`,
     [linkId, reservation],
   );
