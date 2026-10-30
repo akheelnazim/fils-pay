@@ -99,6 +99,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F1 | Refundable is authorized − refunded, so a partial capture can refund money never charged | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F1)` |
 | F2 | Refund another merchant's transaction (IDOR) | `apps/api/src/refunds/initiateMerchantRefund.ts` | fixed | `feat(FP-300/F2)` |
 | F3 | Concurrent refunds both pass (FP-209) and one overwrites the other's total | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F3)` |
+| F6 | Refund route was a 501 stub at a different address than the dashboard posts to | `apps/api/src/routes/refunds.ts` | fixed | `feat(FP-300/F6)` |
+| F13 | `transactions.test.ts` asserted the refund 501 | `apps/api/src/routes/transactions.test.ts` | fixed | `feat(FP-300/F6)` |
 
 ### Test suite (Q)
 
@@ -614,6 +616,14 @@ Keep each entry short. One per bug, under its class heading:
 ### FP-300 refunds (feature, last) (F)
 
 Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
+
+#### F6 Refund route: 501 stub, and two addresses (F13 included)
+- Where: `apps/api/src/routes/refunds.ts`
+- What's wrong: `POST /v1/refunds` answered 501; the dashboard's (commented-out) RefundDrawer posted to `/v1/merchants/:id/refunds`, which didn't exist.
+- Why: the feature was never wired; comments disagreed on which address was right.
+- What it breaks: no refunds at all, from the API or the dashboard.
+- Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
+- Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
 
 #### F3 Concurrent refunds both pass (FP-209)
 - Where: `apps/api/src/payments/processRefund.ts`

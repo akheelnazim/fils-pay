@@ -36,7 +36,7 @@ test("F1: cannot refund more than was captured", async () => {
   const { txnId, refund } = await partlyCaptured("f1-over");
   const result = await refund(toFils(5_000));
   assert.equal(result.statusCode, 422, JSON.stringify(result.body));
-  assert.deepEqual(result.body, { ok: false, code: "refund_exceeds_refundable", refundableFils: 4_000 });
+  assert.deepEqual(result.body, { error: "refund_exceeds_refundable", refundableFils: 4_000 });
   assert.equal(await refundedFils(txnId), 0);
 });
 

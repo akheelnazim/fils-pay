@@ -61,14 +61,14 @@ already exists:
 
 | Piece | Where | State |
 |---|---|---|
-| Route | `POST /v1/refunds` (`apps/api/src/routes/refunds.ts`) | stub, returns `501` |
+| Route | `POST /v1/refunds` (API keys) and `POST /v1/merchants/:merchantId/refunds` (dashboard), both in `apps/api/src/routes/refunds.ts` | live (FP-300/F6): owner/finance or API key, `Idempotency-Key` header required, body `{ transactionId, amountFils?, reason? }` |
 | Core helper | `apps/api/src/payments/processRefund.ts` | complete, tested |
 | Validation / status | `refundValidation.ts`, `refundState.ts` | complete, tested |
 | Fee reversal | `calculateRefundFee()` in `packages/money` | complete |
 | Schema | `refunds` (0042), `transactions.refunded_fils` (0043), event types (0044) | migrated |
 | Settlement | batch reopen in `apps/settlement` | to do |
 | Webhook | add `refund.succeeded` to the eligible list in `dispatcher.ts` | to do |
-| UI | `apps/web/src/pages/transactions/RefundDrawer.tsx` | parked (commented out) |
+| UI | `apps/web/src/pages/transactions/RefundDrawer.tsx` | on the transaction detail page (FP-300/F6) |
 
 It should mostly be wiring. A previous attempt (FP-170, January) was
 reverted because of the scheme file; the `refunds-v1` branch has the
@@ -80,6 +80,8 @@ approach.
 > **AM:** the drawer posts to `/v1/merchants/:id/refunds`, the stub is `/v1/refunds`
 >
 > **MK:** /v1/refunds. drawer's old
+>
+> **Resolved (2026-10-30, FP-300/F6):** both addresses work with the same checks; the merchant is always the logged-in one.
 
 ## Things in flight you'll hear about
 

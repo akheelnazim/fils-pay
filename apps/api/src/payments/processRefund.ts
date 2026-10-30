@@ -106,8 +106,12 @@ export async function processRefund(
 
     if (!validation.ok) {
       const statusCode = validation.code === "transaction_not_refundable" ? 409 : 422;
-      await completeIdempotencyKey(client, claim.row.id, { statusCode, body: validation });
-      return { kind: "settled" as const, result: { statusCode, body: validation } };
+      // The API's error shape is { error, ... } (F6 review: the drawer and
+      // integrations read `error`); the validator's own shape stays internal.
+      const { ok: _ok, code, ...details } = validation;
+      const body = { error: code, ...details };
+      await completeIdempotencyKey(client, claim.row.id, { statusCode, body });
+      return { kind: "settled" as const, result: { statusCode, body } };
     }
 
     // The fee this transaction was actually charged at capture, read from

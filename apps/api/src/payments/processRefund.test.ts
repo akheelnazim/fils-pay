@@ -428,7 +428,7 @@ test("a refund against a voided transaction is refused by the validator", async 
     actor,
   });
   assert.equal(result.statusCode, 409);
-  assert.deepEqual(result.body, { ok: false, code: "transaction_not_refundable", status: "voided" });
+  assert.deepEqual(result.body, { error: "transaction_not_refundable", status: "voided" });
 
   const refunds = await pool.query<{ c: number }>(
     `SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1`,

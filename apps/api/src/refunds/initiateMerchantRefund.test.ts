@@ -196,7 +196,7 @@ test("an invalid refund amount is refused by the validator", async () => {
     actor: merchant.actor,
   });
   assert.equal(result.statusCode, 422);
-  assert.deepEqual(result.body, { ok: false, code: "refund_amount_invalid" });
+  assert.deepEqual(result.body, { error: "refund_amount_invalid" });
 
   const refunds = await pool.query<{ c: number }>(
     `SELECT COUNT(*)::int AS c FROM refunds WHERE transaction_id = $1`,
