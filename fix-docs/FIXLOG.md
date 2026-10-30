@@ -164,7 +164,7 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 | S16 | OTP guess limit resets on every login; no rate limiting | `apps/api/src/routes/auth.ts`, `routes/adminAuth.ts` | open | |
 | S17 | Public pay endpoint allows unlimited card testing | `apps/api/src/paymentLinks/pay.ts` | open | |
 | S18 | Unsalted hash of card number, CVV and expiry stored | `apps/api/src/payments/authorize.ts` | open | |
-| S19 | `export-summary` has no auth check; disabled admins keep impersonation; no session rotation after OTP | `apps/api/src/routes/reporting.ts` | open | |
+| S19 | `export-summary` has no auth check; disabled admins keep impersonation; no session rotation after OTP | `apps/api/src/routes/reporting.ts` | partial: impersonation fixed; other gaps open | |
 | M21 | TypeScript and Go apply the discount in a different order (1 fil apart) | `apps/settlement/internal/settlement/discounted_fee.go` | fixed | this commit |
 | R10 | Reporting consumer can skip outbox events for good (cursor by id, not commit order) | `apps/reporting/src/consumer/runConsumerPass.ts` | open | |
 | X15 | Admin "Rebuild analytics" double-counts unconsumed events | `apps/api/src/admin/reportingRebuild.ts` | open | |
@@ -200,6 +200,12 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 - What / why: the settlement form combined browser-local date arithmetic with UTC formatting, sometimes selecting the wrong business day.
 - Fix: derive Bahrain's calendar date and subtract one calendar day, independent of the browser time zone.
 - Test: `SettlementPage.t5.fix.test.ts` checks Bahrain midnight, leap day and year rollover. Before the fix `2026-10-29T21:00:00Z` returned `2026-10-28` instead of `2026-10-29`.
+
+### S19 — Block impersonation by disabled admins
+- Where: `apps/api/src/admin/impersonation.ts`.
+- What / why: grant lookup did not check the issuing admin's status, allowing a disabled admin to retain merchant read access until expiry.
+- Fix: require an active admin on every grant lookup. Re-enabling an admin restores any still-live, unrevoked grant; the other S19 gaps remain open.
+- Test: `impersonation.s19.fix.test.ts` checks active, disabled, re-enabled and revoked grants. Before the fix the disabled grant returned a grant object instead of `null`.
 
 #### R6 Reservation can expire while a payment-link capture is in progress
 - Where: `apps/api/src/paymentLinks/pay.ts`
