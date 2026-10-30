@@ -116,6 +116,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F7 | `refund.succeeded` never sent to webhooks (no envelope case, not in the eligible list) | `apps/api/src/webhooks/dispatcher.ts` | fixed | `feat(FP-300/F7)` |
 | F8 | Settlement ignores refunds: the payout isn't reduced | `apps/settlement/internal/settlement/batch.go` | fixed | `feat(FP-300/F8)` |
 | F9 | Reporting has no refund case; the daily rollup has no refund columns and buckets by UTC | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `feat(FP-300/F9)` |
+| F15 | `refund_merchant_summary` joined on the wrong id, so it was always empty | `db/migrations/0083_refund_merchant_summary_join.sql` | fixed | `feat(FP-300/F15)` |
 
 ### Test suite (Q)
 
@@ -712,6 +713,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it breaks: no refunds at all, from the API or the dashboard.
 - Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
 - Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
+
+#### F15 Refund summary view is always empty
+- Where: `db/migrations/0083_refund_merchant_summary_join.sql` (replaces the view from 0072)
+- What's wrong: `refund_merchant_summary` returned no rows at all, however many refunds existed.
+- Why: 0072 joined `transactions t ON t.id = r.id`, a refund's own id; no transaction has that id, and the inner join dropped every refund. (The plan said `original_captured_fils` would be NULL; it was the whole row that was missing.)
+- What it breaks: the admin refund dashboard would show nothing; once the join is fixed, summing `captured_fils` per refund would also count a capture twice when one payment is refunded in parts on the same day.
+- Fix: new migration 0083 drops and recreates the view joining on `r.transaction_id`, with `original_captured_fils` counted once per transaction per Bahrain day (`ROW_NUMBER` filter); same columns and unique index. 0072 stays as applied. Review: no code, grant or other migration references the view; nothing in the code refreshes it either, despite 0072's comment that the reporting worker does, so the numbers only update on a manual `REFRESH MATERIALIZED VIEW` (not fixed). · Proper fix (if different): refresh it from the reporting worker (or make it a plain view / read `merchant_daily_volume`).
+- Test: `payments/refundSummary.f15.fix.test.ts` (3 refunds across two payments, two on one payment: 3 rows' worth of count, 3 500 refunded, captures 16 000 counted once each, fee summed). Failed before: no row for the merchant · ADR: 0003 (Bahrain day), 0005 (migration number clear of 0054–0056)
 
 #### F9 Refunds never reach the reporting rollup
 - Where: `apps/reporting/src/consumer/applyEvent.ts`, `runConsumerPass.ts`, `apps/api/src/admin/reportingRebuild.ts`, new `db/migrations/0082_merchant_daily_volume_refunds.sql`
