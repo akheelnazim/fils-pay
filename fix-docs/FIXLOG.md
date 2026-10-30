@@ -44,7 +44,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M3 | Split payouts short every batch | open | |
 | M4 | Net payout computed in float32 | `apps/settlement/internal/settlement/payable.go` | fixed | `fix(M4)` |
 | M5 | Lifetime payout estimate drifts (REAL) | open | |
-| M6 | Platform volume counter overflows int32 | open | |
+| M6 | Platform volume counter overflows int32 | `apps/settlement/internal/settlement/platform_volume.go` | fixed | `fix(M6)` |
 | M7 | Dashboard fee 245 vs charged 225 bps | `apps/api/src/fees/currentFeeScheduleDisplay.ts` | fixed | `fix(M7)` |
 | M8 | MDR recalculation rewrites paid batches | open | |
 | M9 | Recalculate balances button 135K → 7K (FP-203) | `apps/settlement/internal/ledger/refresh.go` | fixed | `fix(M9)` |
@@ -145,7 +145,8 @@ Corrections:
   `v_active_api_keys`, drop `v_unbatched_capture_events`, fix or drop 0055, keep `revoke_after`.
 - ADR-0006 (Adjust balance is cache-only; rebuild resets it): by design, not a bug. Code matches
   (cache + audit row; journaled variant exists, not exposed).
-- New migrations (R2, R3, M5, M6) start at 0073, which ADR-0005 allows.
+- New migrations (R2, R3, M5, M6) start at 0073, which ADR-0005 allows. 0073 is now M6's;
+  the next fix (and D1/D2 moving 0054–0056 content) takes the next free number.
 
 ## Entries
 
@@ -299,6 +300,15 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: merchants are paid a few fils off on bigger batches (20,000.123 BD gross − 500.003 BD fee paid 1 fil short), growing with size (22,739 fils off on a 9-billion-fil batch). Breaks ADR-0001.
 - Fix: `return grossFils - feeFils`.
 - Test: `settlement/payable_fix_test.go` (empty, ordinary, 123,456.789 BD, odd fils, very large; three were wrong before) · ADR: 0001
+
+#### M6 Platform volume counter overflows int32
+- Where: `apps/settlement/internal/settlement/platform_volume.go`
+- What's wrong: the platform-wide processed-volume counter wrapped negative shortly after reaching the volume tier.
+- Why: `platform_stats.total_processed_fils` was `INTEGER` (0049) and Go added in `int32`; the tier starts at 2,000,000,000 fils, only 147 M under the int32 max. Comments claiming BIGINT were false.
+- What it breaks: 2,100,000,000 + a 100,000,000-fil batch was stored as −2,094,967,296, so the 15 bps tier discount silently switched off for every merchant (and a value written from TS past the limit errored).
+- Fix: migration `0073_platform_stats_bigint.sql` (`BIGINT`); Go `int64` throughout; TS reads the BIGINT string with `Number()`. Widened the old test's read-back to `int64`.
+- Note: the tier itself never had finance sign-off (HANDOVER, MK's comment); not changed here.
+- Test: `settlement/platform_volume_fix_test.go` (crossing, at and one past the int32 max) and `fees/platformVolumeTier.fix.test.ts` (2^31−1, 2^31, 9e9); both failed before · ADR: 0005 (0073 is allowed)
 
 #### M7 Fee shown 245 bps, charged 225 bps
 - Where: `apps/api/src/fees/currentFeeScheduleDisplay.ts`

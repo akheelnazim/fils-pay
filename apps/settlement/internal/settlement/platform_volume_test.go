@@ -43,7 +43,7 @@ func TestRecordPlatformProcessedVolume_SmallValuesExact(t *testing.T) {
 		}
 	}
 
-	var got int32
+	var got int64
 	err = tx.QueryRow(ctx, `SELECT total_processed_fils FROM platform_stats WHERE id = 1`).Scan(&got)
 	if err != nil {
 		t.Fatalf("read back total: %v", err)
