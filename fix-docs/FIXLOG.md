@@ -140,14 +140,15 @@ Corrections:
 
 ## Against the ADRs (rules the code must follow)
 
-- ADR-0001 (integer fils, BIGINT, `parseBhdToFils`, no floats): backs M1, M4, M5, M6, M12, M13.
-  The audit's M2 fix still sends a `float64` (`SchemeAmountBD`); ADR-safe version computes
-  `amount_fils::numeric / 1000` in SQL. Other `toFixed`/float hits are rate labels and progress
-  bars, not money. Audit fixes for M3 (`allocateRemainder`) and F5 (`bankersRoundDiv`) comply.
-- ADR-0002 (residue journaled in CloseBatch, "implemented"): no code posts it → **M14**. Also says
-  the scheme `amount` must be exactly `amount_fils / 1000`, which is M2's fix. The March script
-  books residue as debit `merchant_payable` / credit `scheme_rounding_residue`; ADR-0002 says
-  credit `card_scheme_clearing` / debit residue → **X5** (merchants were charged the residue).
+- ADR-0001 (integer fils, BIGINT, `parseBhdToFils`, no floats): backs M1, M4, M5, M6, M12, M13,
+  and M16. M16 removes the decimal scheme amount and stores the export snapshot as integer
+  `exported_amount_fils`; two decimals are formatted only at the file boundary. Other `toFixed`/float
+  hits are rate labels and progress bars, not money. Audit fixes for M3 (`allocateRemainder`) and
+  F5 (`bankersRoundDiv`) comply.
+- ADR-0002 (residue journaled in CloseBatch): M14 now posts each residue in a balanced ledger group.
+  New scheme rows export the amount truncated to 10 fils (M2); M16 keeps historical export snapshots
+  in integer fils so rerunning old batches retains the original file amount. X5 is fixed: the March
+  script books residue between `card_scheme_clearing` and `scheme_rounding_residue`.
 - ADR-0003 (calendar-month scripts use the UTC month): the March script's UTC month is **correct**.
   X2 fix = idempotency guard + dry run only; don't change the window.
 - ADR-0004 (console button rebuilds from settled data, not the ledger): the audit's M9 swap to
