@@ -24,7 +24,16 @@ interface LockedLink {
   status: string;
   amount_fils: string | number;
   capture_transaction_id: string | null;
+  /** The reservation is older than RECOVERY_MIN_AGE_MINUTES. */
+  stale: boolean;
 }
+
+/**
+ * A capture in flight keeps its reservation for as long as the acquirer takes
+ * to answer. Recovery before that could release a link whose payment then
+ * goes through, so it waits until the reservation is clearly abandoned.
+ */
+const RECOVERY_MIN_AGE_MINUTES = 15;
 
 interface MarkedTransaction {
   status: string;
@@ -54,9 +63,10 @@ export async function recoverPaymentLinkCapture(
 
   const result = await withTransaction(pool, async (client): Promise<RecoverPaymentLinkResult> => {
     const linkResult = await client.query<LockedLink>(
-      `SELECT id, merchant_id, status, amount_fils, capture_transaction_id
+      `SELECT id, merchant_id, status, amount_fils, capture_transaction_id,
+              (reserved_at IS NOT NULL AND reserved_at < now() - ($2 || ' minutes')::interval) AS stale
          FROM payment_links WHERE id = $1 FOR UPDATE`,
-      [input.linkId],
+      [input.linkId, RECOVERY_MIN_AGE_MINUTES],
     );
     const link = linkResult.rows[0];
     if (!link) return { statusCode: 404, body: { error: "payment_link_not_found" } };
@@ -78,6 +88,8 @@ export async function recoverPaymentLinkCapture(
         body: { error: outcome ? "already_resolved_differently" : "not_awaiting_recovery", status: link.status },
       };
     }
+
+    if (!link.stale) return { statusCode: 409, body: { error: "recently_reserved" } };
 
     const txnResult = await client.query<MarkedTransaction>(
       `SELECT status, captured_fils FROM transactions

@@ -69,13 +69,16 @@ POST /v1/admin/payment-links/<link id>/recover-capture
 ```
 
 - `captured`: the link becomes paid. Refused with `ledger_not_reconciled` if
-  the transaction is not captured here for the full amount; Finance books the
-  capture first, then repeat the call.
+  the transaction is not captured here for the full amount; Finance corrects
+  the books first (a ledger correction, not done through this route), then
+  repeat the call.
 - `not_captured`: the link is released for a new attempt and the dangling
   authorization is voided. Refused with `local_books_show_capture` if a
   capture is recorded here; reconcile that first.
 
-Each call is audited and repeating the same report does nothing more.
+Each call is audited and repeating the same report does nothing more. A link
+reserved less than 15 minutes ago is refused (`recently_reserved`): its payment
+may still be running.
 Reservations created before migration 0081 have no marker and are not covered.
 
 When deploying migration 0081, pause new payment-link traffic, drain all old

@@ -64,7 +64,7 @@ async function signedInAdmin(role: "finance" | "support"): Promise<{ cookie: str
 }
 
 /** A link left processing by an uncertain capture (R6): the acquirer answered "error". */
-async function stuckLink() {
+async function stuckLink(options: { recent?: boolean } = {}) {
   const merchant = await pool.query<{ id: string }>(
     `INSERT INTO merchants (display_name, mdr_bps, onboarding_status) VALUES ($1, 250, 'approved') RETURNING id`,
     [`R7 ${randomUUID()}`],
@@ -84,6 +84,10 @@ async function stuckLink() {
   const paid = await payPaymentLink(pool, uncertain, { paymentLinkReservationTimeoutSeconds: 0 }, { token, card, idempotencyKey: randomUUID() });
   assert.equal(paid.statusCode, 502);
   const marker = await pool.query<{ capture_transaction_id: string }>(`SELECT capture_transaction_id FROM payment_links WHERE id = $1`, [link.rows[0]!.id]);
+  // Recovery is for reservations that have been stuck a while; a fresh one may still be running.
+  if (!options.recent) {
+    await pool.query(`UPDATE payment_links SET reserved_at = now() - interval '1 hour' WHERE id = $1`, [link.rows[0]!.id]);
+  }
   return { merchantId, token, linkId: link.rows[0]!.id, txnId: marker.rows[0]!.capture_transaction_id };
 }
 
@@ -191,5 +195,19 @@ test("R7: a link that is not stuck, an unknown link, bad bodies, no login and th
   assert.equal((await post(recoverUrl(linkId), undefined, { attestedOutcome: "captured", reason: REASON })).statusCode, 401);
   assert.equal((await post(recoverUrl(linkId), support.cookie, { attestedOutcome: "captured", reason: REASON })).statusCode, 403);
   assert.equal((await linkState(linkId)).status, "reserved");
+  assert.equal((await auditRows(linkId)).length, 0);
+});
+
+test("R7: a recently reserved link is refused: its payment may still be running", async () => {
+  const { cookie } = await signedInAdmin("finance");
+  const { linkId, txnId } = await stuckLink({ recent: true });
+  for (const attestedOutcome of ["not_captured", "captured"]) {
+    const res = await app.inject({ method: "POST", url: recoverUrl(linkId), headers: { cookie }, payload: { attestedOutcome, reason: REASON } });
+    assert.equal(res.statusCode, 409, res.body);
+    assert.equal(res.json().error, "recently_reserved");
+  }
+  const state = await linkState(linkId);
+  assert.equal(state.status, "reserved");
+  assert.equal(state.capture_transaction_id, txnId);
   assert.equal((await auditRows(linkId)).length, 0);
 });
