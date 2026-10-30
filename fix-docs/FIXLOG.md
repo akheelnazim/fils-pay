@@ -52,7 +52,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M10 | Settlement summary double-counts multi-capture | `apps/api/src/settlement/query.ts` | fixed | `fix(M10)` |
 | M11 | Reconciliation pending uses `merchants.mdr_bps` | open | |
 | M12 | `parsePromotionalDiscountFils` uses float × 100 | `apps/api/src/payments/discountAdjustment.ts` | fixed | `fix(M12)` |
-| M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | open | |
+| M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | `apps/api/src/fees/estimate.ts` | fixed | `fix(M13)` |
 | M14 | Scheme residue never journaled (ADR-0002) | open | |
 | M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | open | |
 
@@ -403,6 +403,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: nothing yet (no caller), but wired up it would book "1.250" BD as 125 fils, a tenth of the discount.
 - Fix: deleted it (and its now-unused `BadRequestError` import), as the audit says; `parseBhdToFils` in `packages/money` is the parser to use. · Proper fix (if different): same.
 - Test: `payments/discountAdjustment.fix.test.ts` (the export is gone, failed before; `parseBhdToFils` gives 1250 for "1.250", 1 for "0.001", rejects 4 decimals) · ADR: 0001
+
+#### M13 Reconciliation pending fee uses float rates
+- Where: `apps/api/src/fees/estimate.ts`
+- What's wrong: the reconciliation report's "pending, not yet batched" figure estimated each capture's fee with float rates and `Math.round`.
+- Why: `estimateFeeFils` computed `amount × mdr/10000 − that × discount/10000` in floats and rounded half up once; capture charges `applyRateFils(amount, rate)` (integer, banker's rounding) and the discount adjustment gives back `applyRateFils(fee, discountBps)`, each rounded on its own. Breaks ADR-0001.
+- What it breaks: on .5 boundaries the estimate is a fil off per capture (20 fils at 250 bps: estimate 1, charged 0; 10.200 BD at 250 bps with 10% discount: 230 vs 229), so the report shows a gap that isn't there.
+- Fix: integer `applyRateFils` for the fee and for the discount, the same two steps capture and the adjustment take. The rate it is given is still `merchants.mdr_bps`; that is M11.
+- Test: `fees/estimate.fix.test.ts` (half-fil fee, discount rounding, ordinary/zero/large amounts all equal what capture + adjustment charge; two failed before) · ADR: 0001
 
 ### Settlement timing and test merchants (T)
 
