@@ -98,6 +98,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F14)` |
 | F1 | Refundable is authorized − refunded, so a partial capture can refund money never charged | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F1)` |
 | F2 | Refund another merchant's transaction (IDOR) | `apps/api/src/refunds/initiateMerchantRefund.ts` | fixed | `feat(FP-300/F2)` |
+| F3 | Concurrent refunds both pass (FP-209) and one overwrites the other's total | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F3)` |
 
 ### Test suite (Q)
 
@@ -613,6 +614,15 @@ Keep each entry short. One per bug, under its class heading:
 ### FP-300 refunds (feature, last) (F)
 
 Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
+
+#### F3 Concurrent refunds both pass (FP-209)
+- Where: `apps/api/src/payments/processRefund.ts`
+- What's wrong: two refunds of 6 000 fils on a 10 000 capture, sent together, both succeeded; two that fit (3 000 + 4 000) left `refunded_fils` at 4 000.
+- Why: step 1 read the transaction without a lock and committed before the acquirer call, so both refunds validated against the same total; step 3 then wrote `refunded_fils` as an absolute value.
+- What it breaks: more money back than was captured, and a `refunded_fils` that understates what went back (so a further refund is allowed too).
+- Fix: step 1 `SELECT … FOR UPDATE` (now also `AND merchant_id = $2`, the F2 follow-up) and reserves the amount (`refunded_fils + amount`) before the acquirer call; step 3 releases it on a decline or error and recomputes status; on success it sets only `status`, from `refunded_fils` and `captured_fils` re-read under the lock (review: a capture can land during the acquirer call). · Proper fix (if different): a `pending` refund row written in step 1, so a crash between steps 1 and 3 can't strand a reservation and in-flight amounts are visible as such.
+- Known limits while another refund is in flight (record, not fixed): the status, event type and webhook `refundedTotalFils` include the other refund's reservation; if that one is then declined, the release corrects the status but not the event already emitted. `admin/transactionStatusRecompute.ts` can likewise see a reservation; the next refund step corrects it.
+- Test: `payments/processRefund.f3.fix.test.ts` (a gated fake acquirer makes the race deterministic: 6 000 + 6 000 gives one 200 and one 422, `refunded_fils` 6 000, one refund row; 3 000 + 4 000 both count, 7 000; declined and errored refunds release the reservation and a retry works; another merchant's id is a 404 in `processRefund` itself; a capture during the acquirer call is used for the status). The race and scope tests failed before · ADR: 0001
 
 #### F2 Refund another merchant's transaction
 - Where: `apps/api/src/refunds/initiateMerchantRefund.ts`
