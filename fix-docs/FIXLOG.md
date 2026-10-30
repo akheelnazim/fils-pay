@@ -61,7 +61,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M17 | Go rate and split calculations can overflow before division | `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go` | fixed | `fix(M17)` |
 | M18 | Split payouts do not update the lifetime payout estimate | `apps/settlement/internal/splits/allocate.go` | fixed | `fix(M18)` |
 | M19 | Historical lifetime payout estimates retain drift and missing split payouts | `apps/settlement/internal/settlement/payout_estimate.go` | partly fixed: report added, correction waits on Finance | `fix(M19)` |
-| M20 | Monthly payout estimate overstates partially allocated split payouts | `apps/settlement/internal/settlement/payout_estimate.go` | open | |
+| M20 | Monthly payout estimate overstates partially allocated split payouts | `apps/settlement/internal/settlement/payout_estimate.go` | fixed | `fix(M20)` |
 
 ### Settlement timing and test merchants (T)
 
@@ -183,7 +183,9 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 - Where: `apps/settlement/internal/settlement/payout_estimate.go`
 - What's wrong: `EstimateMonthlyPayout` sums the full net amount of paid batches even when only part of a split batch was allocated to children. No production caller was found in the M5 audit.
 - What it breaks: a monitoring estimate can report more than the amount actually paid when split weights total less than 100%.
-- Next: derive the estimate from actual payout amounts and cover ordinary, full and partial split payouts.
+- Fix: sum recognized payout ledger credits for paid batches; retain zero-valued split audit rows so zero allocations can be distinguished from missing history. Ambiguous historical rows return an error rather than silently reporting zero. · Proper fix: use a durable typed payout record instead of matching ledger descriptions and reconcile legacy history.
+- Test: `settlement/payout_estimate_m20_fix_test.go` covers ordinary, full, partial, zero and historical payouts; before the fix the estimate was 30,001 instead of 22,500 fils. Updated M5's fixture to include the payout ledger entries it represents.
+- Conflicts: `fix-docs/FIXLOG.md`: main recorded M19's read-only report while M20 marked its estimate fix complete; kept both status updates.
 
 #### T4 Invalid settlement polling interval crashes the daemon
 - Where: `apps/settlement/internal/config/config.go`, `apps/settlement/internal/scheduler/daemon.go`

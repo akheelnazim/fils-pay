@@ -2,6 +2,7 @@ package settlement
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -20,6 +21,7 @@ func UpdateLifetimePayoutMonitoringEstimate(ctx context.Context, tx pgx.Tx, merc
 	`, merchantID, int64(netPayoutFils))
 	return err
 }
+
 // EstimateMonthlyPayout returns an approximate total payout for the
 // given merchant over the last 30 calendar days, used by the ops
 // dashboard to flag merchants whose settlement run is unusually large
@@ -28,9 +30,18 @@ func UpdateLifetimePayoutMonitoringEstimate(ctx context.Context, tx pgx.Tx, merc
 // figure that never feeds into any payout-affecting code path.
 func EstimateMonthlyPayout(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID) (money.Fils, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT net_payout_fils FROM settlement_batches
-		 WHERE merchant_id = $1 AND status = 'paid' AND paid_at >= now() - interval '30 days'
-		 ORDER BY paid_at DESC
+		SELECT sb.id, sb.net_payout_fils,
+		       COALESCE(SUM(le.amount_fils) FILTER (WHERE le.description IN ('settlement payout: batch paid', 'settlement payout: split to sub-merchant')), 0),
+		       COUNT(le.id) FILTER (WHERE le.description IN ('settlement payout: batch paid', 'settlement payout: split to sub-merchant')),
+		       COUNT(le.id) FILTER (WHERE le.description IS NULL OR le.description NOT IN ('settlement payout: batch paid', 'settlement payout: split to sub-merchant')),
+		       EXISTS (SELECT 1 FROM settlement_batch_splits s WHERE s.settlement_batch_id = sb.id)
+		       AND NOT EXISTS (SELECT 1 FROM settlement_batch_splits s WHERE s.settlement_batch_id = sb.id AND s.allocated_fils <> 0)
+		  FROM settlement_batches sb
+		  LEFT JOIN ledger_entries le ON le.settlement_batch_id = sb.id AND le.merchant_id = sb.merchant_id
+		       AND le.account_id = 'platform_cash' AND le.direction = 'credit'
+		 WHERE sb.merchant_id = $1 AND sb.status = 'paid' AND sb.paid_at >= now() - interval '30 days'
+		 GROUP BY sb.id
+		 ORDER BY sb.paid_at DESC
 	`, merchantID)
 	if err != nil {
 		return 0, err
@@ -38,14 +49,20 @@ func EstimateMonthlyPayout(ctx context.Context, tx pgx.Tx, merchantID uuid.UUID)
 	defer rows.Close()
 
 	var total money.Fils
-	var count int
 	for rows.Next() {
-		var netFils int64
-		if err := rows.Scan(&netFils); err != nil {
+		var batchID uuid.UUID
+		var netFils, payoutFils, recognized, unknown int64
+		var zeroSplit bool
+		if err := rows.Scan(&batchID, &netFils, &payoutFils, &recognized, &unknown, &zeroSplit); err != nil {
 			return 0, err
 		}
-		total += money.Fils(netFils)
-		count++
+		if unknown > 0 || (netFils != 0 && recognized == 0 && !zeroSplit) {
+			return 0, fmt.Errorf("EstimateMonthlyPayout: cannot determine payout for batch %s", batchID)
+		}
+		total, err = money.AddFilsChecked(total, money.Fils(payoutFils))
+		if err != nil {
+			return 0, err
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return 0, err

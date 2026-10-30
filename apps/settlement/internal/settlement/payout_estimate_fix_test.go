@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/filspay/settlement/internal/money"
+	"github.com/google/uuid"
 )
 
 // M5: the lifetime payout estimate was a REAL column bumped with float32, so
@@ -55,11 +56,20 @@ func TestM5_MonthlyEstimateExact(t *testing.T) {
 	ctx := context.Background()
 	merchantID := insertActiveMerchant(t, pool, 250)
 	for i, net := range []int64{16_777_216, 1, 1, 1} {
-		if _, err := pool.Exec(ctx, `
+		var batchID uuid.UUID
+		if err := pool.QueryRow(ctx, `
 			INSERT INTO settlement_batches (merchant_id, batch_date, status, gross_fils, fee_fils, net_payout_fils, closed_at, paid_at)
 			VALUES ($1, current_date - $2::int, 'paid', $3, 0, $3, now(), now())
-		`, merchantID, i+1, net); err != nil {
+			RETURNING id
+		`, merchantID, i+1, net).Scan(&batchID); err != nil {
 			t.Fatalf("insert paid batch: %v", err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO ledger_entries (entry_group_id, merchant_id, settlement_batch_id, account_id, direction, amount_fils, occurred_at, description)
+			VALUES ($1, $2, $3, 'merchant_payable', 'debit', $4, now(), 'settlement payout: batch paid'),
+			       ($1, $2, $3, 'platform_cash', 'credit', $4, now(), 'settlement payout: batch paid')
+		`, uuid.New(), merchantID, batchID, net); err != nil {
+			t.Fatalf("insert payout ledger legs: %v", err)
 		}
 	}
 
