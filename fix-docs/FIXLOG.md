@@ -125,6 +125,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F18 | After the F16 clamp, a later rate decrease pays a fully refunded batch | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `feat(FP-300/F18)` |
 | F19 | Status recompute counts in-flight refunds as refunded | `apps/api/src/admin/transactionStatusRecompute.ts` | fixed | `feat(FP-300/F19)` |
 | F20 | Fee recalculation re-rates money already refunded | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `feat(FP-300/F20)` |
+| F21 | Reconciliation shows a gap when a later day's batch takes a refund | `apps/api/src/settlement/query.ts` | fixed | `feat(FP-300/F21)` |
 
 ### Test suite (Q)
 
@@ -735,6 +736,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - Payout reduction is the Go side (F8, `settlement/refund_fix_test.go`): a TS test can't run `CloseBatch`.
 - Test result: passes on first complete run against the fixed code · ADR: none
 
+#### F21 Reconciliation gap when a refund rolls to a later batch (F10's known limit)
+- Where: `apps/api/src/settlement/query.ts`
+- What's wrong: day 1 net 975 and a refund of 4 000 (fee reversed 100) that doesn't fit, so day 2's batch takes it (F8). The day 1 report showed gap −3 900 and the day 2 report +3 900; only a window holding both tied out. (Found by the Opus review.)
+- Why: pending asked only whether a refund was batched at all, while the ledger counts it on the day it happened and the batch counts it on the day it was taken.
+- What it breaks: daily reconciliation flags false gaps whenever a refund carries over.
+- Fix: no schema change. A refund in the window that no closed or paid batch dated in the window took lowers pending; a refund from outside the window that such a batch took raises pending by the same amount (it is in that batch's net but not in this window's ledger). Captures need no change: `CloseBatch` only takes captures from its own day. · Proper fix (if different): a separate report field for carried-over refunds, so they don't hide inside "pending".
+- Test: `settlement/reconciliationRefunds.f21.fix.test.ts` (day 1, day 2 and the two-day window all tie out). Failed before: `gapFils −3900` and `+3900` · ADR: 0003
+
 #### F20 Fee recalculation re-rates refunded money (F16/F18's proper fix)
 - Where: `apps/settlement/internal/settlement/recalculate_mdr.go`
 - What's wrong: `RecalculateMDR` re-rated every capture in a batch and ignored the refunds the batch took (F8). A fully refunded batch (net 0) cut from 250 to 200 bps paid out 50 fils; on 10 000 captured with 4 000 refunded, 250 → 300 bps charged 50 more though only 6 000 was kept.
@@ -796,7 +805,7 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What's wrong: capture 10 000 fils (fee 250), refund 4 000 (fee reversed 100), nothing batched: the report said `gapFils −3900`, `explained false`. Its own doc comment claimed refund legs were already in pending.
 - Why: the ledger figure (`merchant_payable`) includes the refund's legs, but pending only summed unbatched captures.
 - What it breaks: finance sees a false gap after every refund ("reconciliation still ties out after refunds" was Huda's rule).
-- Fix: pending also subtracts `SUM(amount_fils − fee_reversed_fils)` of the merchant's succeeded refunds in the window that no batch has taken (`settlement_batch_id IS NULL`); once a batch takes a refund (F8) its net carries the reduction instead. Doc comment corrected. The web `ReconciliationPage` only displays the fields. Known limit: a refund and the batch that takes it can fall in different report windows, which shows a gap in one of them (the capture and its batch already behave this way). · Proper fix (if different): same.
+- Fix: pending also subtracts `SUM(amount_fils − fee_reversed_fils)` of the merchant's succeeded refunds in the window that no batch has taken (`settlement_batch_id IS NULL`); once a batch takes a refund (F8) its net carries the reduction instead. Doc comment corrected. The web `ReconciliationPage` only displays the fields. The cross-window case is fixed by F21. · Proper fix (if different): same.
 - Test: `settlement/reconciliationRefunds.fix.test.ts` (refund with nothing batched: pending 5 850, gap 0; capture and refund both batched: gap 0; a refund outside the window isn't counted). The first failed before: `gapFils −3900` · ADR: 0003
 
 #### F15 Refund summary view is always empty

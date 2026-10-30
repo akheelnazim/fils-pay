@@ -250,8 +250,10 @@ export async function listBatchTransactions(
 /**
  * gapFils = ledgerMerchantPayableNetFils - settlementNetPayoutFils -
  * pendingUnbatchedFils. Refund legs are included both in the ledger figure
- * and, until a batch takes them (F8: they then reduce its net), in pending
- * (amount less fee reversed), so a period with refunds still explains to zero.
+ * and, until a batch in the period takes them (F8: they then reduce its net),
+ * in pending (amount less fee reversed); a refund from another period that a
+ * batch in this period took is added back to pending (F21). So a period with
+ * refunds still explains to zero.
  */
 export interface ReconciliationReport {
   periodFrom: string;
@@ -324,13 +326,28 @@ export async function getReconciliationReport(
       `SELECT negotiated_discount_bps FROM merchants WHERE id = $1`,
       [input.merchantId],
     ),
-    // F10: refunds no batch has taken yet.
+    // F10/F21: a refund is in the ledger on the day it happened, but in the
+    // net of whichever batch took it (F8 can roll it to a later day). So a
+    // refund in the window that no batch in the window took is still pending
+    // (it lowers pending), and a refund from outside the window that a batch
+    // in the window took is in that batch's net but not in this ledger figure
+    // (it raises pending by the same amount).
     pool.query<{ total: string }>(
-      `SELECT COALESCE(SUM(amount_fils - fee_reversed_fils), 0) AS total
-         FROM refunds
-        WHERE merchant_id = $1 AND status = 'succeeded' AND settlement_batch_id IS NULL
-          AND occurred_at >= $2 AND occurred_at < $3`,
-      [input.merchantId, windowStart, windowEnd],
+      `SELECT COALESCE(SUM(CASE
+                WHEN r.occurred_at >= $2 AND r.occurred_at < $3 THEN -(r.amount_fils - r.fee_reversed_fils)
+                ELSE (r.amount_fils - r.fee_reversed_fils)
+              END), 0) AS total
+         FROM refunds r
+         LEFT JOIN settlement_batches sb ON sb.id = r.settlement_batch_id
+        WHERE r.merchant_id = $1 AND r.status = 'succeeded'
+          AND (
+                (r.occurred_at >= $2 AND r.occurred_at < $3
+                 AND (sb.id IS NULL OR sb.batch_date < $4::date OR sb.batch_date >= $5::date
+                      OR sb.status NOT IN ('closed', 'paid')))
+             OR ((r.occurred_at < $2 OR r.occurred_at >= $3)
+                 AND sb.batch_date >= $4::date AND sb.batch_date < $5::date AND sb.status IN ('closed', 'paid'))
+              )`,
+      [input.merchantId, windowStart, windowEnd, input.from, input.to],
     ),
   ]);
 
@@ -350,7 +367,7 @@ export async function getReconciliationReport(
     pendingUnbatchedFils += amountFils - feeFils;
   }
 
-  pendingUnbatchedFils -= Number(pendingRefundsResult.rows[0]?.total ?? 0);
+  pendingUnbatchedFils += Number(pendingRefundsResult.rows[0]?.total ?? 0);
 
   const ledgerMerchantPayableNetFils = Number(ledgerResult.rows[0]?.net ?? 0);
   const settlementNetPayoutFils = Number(settlementResult.rows[0]?.total ?? 0);
