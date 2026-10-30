@@ -19,6 +19,7 @@ bites. The step-by-step workflow is `.claude/skills/fix-and-build/SKILL.md`; sta
    real gaps every few fixes).
 7. **FIXLOG entry** (Where = primary file or directory, Clue if the evidence transcript matches, what, why, impact, fix, test) under
    its class, then **one commit** `fix(<ID>): …` with What/Why/Impact/Fix/Test/Checked, and push.
+   Each fix lives on its own branch off a freshly pulled main and lands as one squash commit on main.
 
 ## Lessons
 

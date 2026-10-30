@@ -73,6 +73,8 @@ commands; ask for "OK to commit" / "Problems found" plus file:line bullets. Tell
 
 ## 5. Commit — one per bug
 
+Branch per fix: `git checkout main && git pull` → `git checkout -b fix/<ID>` (or `feat/FP-300-<F#>`, `docs/<topic>`) → work and commit on the branch → `git checkout main && git pull` again → `git merge --squash fix/<ID>` → **one** commit on main with the full message → push → delete the branch.
+
 Stage only this bug's files (code + test + FIXLOG row/entry). Message:
 
 ```

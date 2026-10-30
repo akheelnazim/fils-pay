@@ -14,8 +14,10 @@ Per bug, in order:
 5. Grep callers in TS and Go; typecheck all workspaces; full suite vs baseline; `scripts/` tests
    separately; Go with `-p 1`.
 6. Reviewer agent (read-only, "verdict + file:line bullets"); apply its valid points.
+0. Start on a fresh branch from an up-to-date main (see step 7).
 7. FIXLOG row (with the Where column) and entry under its class (Where, Clue if one matches, what, why, impact, fix, test); then one commit
    `fix(<ID>): …` with What/Why/Impact/Fix/Test/Checked; push.
+   Branch per fix: `git checkout main && git pull` → `git checkout -b fix/<ID>` (or `feat/FP-300-<F#>`, `docs/<topic>`) → work and commit on the branch → `git checkout main && git pull` again → `git merge --squash fix/<ID>` → **one** commit on main with the full message → push → delete the branch. (owner's rule, set 2026-10-30.)
 
 **Why:** the team wants a trackable, one-commit-per-bug history with proof and review.
 **How to apply:** every fix. FP-300 refunds use `feat(FP-300/F#)` and are built last with the
