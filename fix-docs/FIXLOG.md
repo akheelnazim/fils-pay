@@ -53,7 +53,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M11 | Reconciliation pending uses `merchants.mdr_bps` | `apps/api/src/settlement/query.ts` | fixed | `fix(M11)` |
 | M12 | `parsePromotionalDiscountFils` uses float × 100 | `apps/api/src/payments/discountAdjustment.ts` | fixed | `fix(M12)` |
 | M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | `apps/api/src/fees/estimate.ts` | fixed | `fix(M13)` |
-| M14 | Scheme residue never journaled (ADR-0002) | open | |
+| M14 | Scheme residue never journaled (ADR-0002) | `apps/settlement/internal/settlement/batch.go` | fixed | `fix(M14)` |
 | M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | `apps/settlement/internal/ledger/rebuild.go` | fixed | `fix(M15)` |
 
 ### Settlement timing and test merchants (T)
@@ -427,6 +427,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: on .5 boundaries the estimate is a fil off per capture (20 fils at 250 bps: estimate 1, charged 0; 10.200 BD at 250 bps with 10% discount: 230 vs 229), so the report shows a gap that isn't there.
 - Fix: integer `applyRateFils` for the fee and for the discount, the same two steps capture and the adjustment take. The rate it is given is still `merchants.mdr_bps`; that is M11.
 - Test: `fees/estimate.fix.test.ts` (half-fil fee, discount rounding, ordinary/zero/large amounts all equal what capture + adjustment charge; two failed before) · ADR: 0001
+
+#### M14 Scheme rounding residue never journaled
+- Where: `apps/settlement/internal/settlement/batch.go`
+- What's wrong: each scheme export line is truncated to 10 fils, but the 0–9 fils dropped per line were never booked.
+- Why: ADR-0002 (status "implemented") says CloseBatch posts credit `card_scheme_clearing` / debit `scheme_rounding_residue` per line; no code did. Only the one-off March sweep ever posted residue (X2/X5).
+- What it breaks: from April on the ledger, the settlement report and the scheme statement can't agree; a batch of 47.59 + 13.33 + 9.99 + 50.00 BD exports 120.70 BD against 120.91 BD gross with the 21 fils nowhere in the ledger, so finance has nothing to clear against the statement.
+- Fix: in CloseBatch's export loop, each line with residue gets a balanced group (`card_scheme_clearing` credit / `scheme_rounding_residue` debit, with the transaction and batch ids), in the same transaction. Merchants' payable is untouched (the legs do show in the merchant's recent ledger activity, like capture's clearing legs). · Proper fix (if different): same; April–now batches already closed still lack their residue and need a one-off catch-up with finance (not done: never run scripts against data).
+- Test: `settlement/residue_fix_test.go` (legs per line for 9 and 3 fils, none for round amounts, export + residue = gross, no merchant_payable leg; two failed before) · ADR: 0002 (now true)
 
 #### M15 Balance rebuild can overwrite a concurrent batch close
 - Where: `apps/settlement/internal/ledger/rebuild.go`
