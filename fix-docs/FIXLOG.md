@@ -54,7 +54,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M12 | `parsePromotionalDiscountFils` uses float × 100 | `apps/api/src/payments/discountAdjustment.ts` | fixed | `fix(M12)` |
 | M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | `apps/api/src/fees/estimate.ts` | fixed | `fix(M13)` |
 | M14 | Scheme residue never journaled (ADR-0002) | open | |
-| M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | open | |
+| M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | `apps/settlement/internal/ledger/rebuild.go` | fixed | `fix(M15)` |
 
 ### Settlement timing and test merchants (T)
 
@@ -427,6 +427,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: on .5 boundaries the estimate is a fil off per capture (20 fils at 250 bps: estimate 1, charged 0; 10.200 BD at 250 bps with 10% discount: 230 vs 229), so the report shows a gap that isn't there.
 - Fix: integer `applyRateFils` for the fee and for the discount, the same two steps capture and the adjustment take. The rate it is given is still `merchants.mdr_bps`; that is M11.
 - Test: `fees/estimate.fix.test.ts` (half-fil fee, discount rounding, ordinary/zero/large amounts all equal what capture + adjustment charge; two failed before) · ADR: 0001
+
+#### M15 Balance rebuild can overwrite a concurrent batch close
+- Where: `apps/settlement/internal/ledger/rebuild.go`
+- What's wrong: the `rebuild-balances` CLI could leave a merchant's cached balance missing a batch close that ran at the same time.
+- Why: `RebuildAllBalances` read the ledger total, then upserted `cached_payable_fils = total`. A batch close committing its ledger legs and cache increment in between was overwritten with the stale total (YA's TODO said so; nothing locked).
+- What it breaks: a merchant with 5.000 BD settled and a 1.000 BD batch closing during the rebuild ends at 5.000 instead of 6.000 until the next rebuild; payouts read the cache.
+- Fix: per merchant, make sure the cache row exists, lock it `FOR UPDATE`, then read the ledger: a batch close holding the row commits first and the ledger read then includes it. · Proper fix (if different): lock merchants in a fixed order (or one at a time in separate transactions) so a long rebuild can't deadlock with a multi-merchant split payout; today a deadlock just fails the manual CLI run.
+- Test: `ledger/rebuild_fix_test.go` (a batch close holding the row while the rebuild runs; 5000 instead of 6000 before, 6000 now) · ADR: 0004 unchanged (the console button is M9's settled-data path)
 
 ### Settlement timing and test merchants (T)
 
