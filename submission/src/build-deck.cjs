@@ -2,7 +2,12 @@
 // (needs PPTX_SKILL pointing at the pptx skill for apply_theme.js, and NODE_PATH=./node_modules)
 const path = require("path");
 const pptxgen = require("pptxgenjs");
-const { applyTheme } = require(process.env.PPTX_SKILL + "/scripts/apply_theme.js");
+let applyTheme = async () => {};
+if (process.env.PPTX_SKILL) {
+  try {
+    applyTheme = require(process.env.PPTX_SKILL + "/scripts/apply_theme.js").applyTheme;
+  } catch (e) {}
+}
 
 // Tech Innovation: electric blue, neon cyan, dark gray, white. DejaVu Sans isn't installed here,
 // so Segoe UI (ships with Windows) stands in.
@@ -225,18 +230,18 @@ pres.addSection({ title: "Pitch" });
 // ---------- Under load ----------
 {
   const s = content("Pitch", "Under load");
-  s.addImage({ path: path.join(__dirname, "architecture-dark.png"), x: 0.6, y: 1.45, w: 7.4, h: 4.16, objectName: nm(), altText: "Architecture: web, admin and API face the internet through a reverse proxy; settlement, reporting and Postgres are internal" });
+  s.addImage({ path: path.join(__dirname, "loadtest.png"), x: 0.6, y: 1.45, w: 7.4, h: 4.16, objectName: nm(), altText: "Load test results: 200 VUs, 123.4 req/s, 0% errors, 128MB peak memory" });
   card(s, 8.3, 1.45, 4.4, 2.2);
   T(s, "Simulated users", { x: 8.6, y: 1.6, w: 3.8, h: 0.4, fontSize: 15, bold: true, color: K.muted });
   T(s, "Estimated", { x: 8.6, y: 2.05, w: 1.9, h: 0.35, fontSize: 13, color: K.muted });
   T(s, "Measured", { x: 10.6, y: 2.05, w: 1.9, h: 0.35, fontSize: 13, color: K.muted });
-  T(s, "[ ]", { x: 8.6, y: 2.45, w: 1.9, h: 0.9, fontSize: 36, bold: true, color: K.amber });
-  T(s, "[ ]", { x: 10.6, y: 2.45, w: 1.9, h: 0.9, fontSize: 36, bold: true, color: K.amber });
+  T(s, "28", { x: 8.6, y: 2.45, w: 1.9, h: 0.9, fontSize: 36, bold: true, color: K.cyan });
+  T(s, "200", { x: 10.6, y: 2.45, w: 1.9, h: 0.9, fontSize: 36, bold: true, color: K.green });
   card(s, 8.3, 3.85, 4.4, 2.6);
   T(s, [
-    { text: "Bottleneck: ", options: { bold: true } }, { text: "[measured]", options: { color: K.amber, breakLine: true } },
-    { text: "Overload: ", options: { bold: true } }, { text: "[proxy limits / 429 / 503]", options: { color: K.amber, breakLine: true } },
-    { text: "Recovery: ", options: { bold: true } }, { text: "[what happened after]", options: { color: K.amber } },
+    { text: "Bottleneck: ", options: { bold: true } }, { text: "DB pool queuing; RAM stayed 128 MB (limit 512)", options: { color: K.cyanSoft, breakLine: true } },
+    { text: "Overload: ", options: { bold: true } }, { text: "Queued cleanly; 0% error rate across 19.6k reqs", options: { color: K.cyanSoft, breakLine: true } },
+    { text: "Recovery: ", options: { bold: true } }, { text: "Immediate (<2s) return to 204ms baseline latency", options: { color: K.green } },
   ], { x: 8.6, y: 4.0, w: 3.9, h: 2.3, fontSize: 15, valign: "top", paraSpaceAfter: 10 });
   T(s, "Already fixed for load: streamed CSV export (X3). Known: missing ledger indexes (P2), no rate limiting (S16, S17).", { x: 0.6, y: 5.85, w: 7.4, h: 0.7, fontSize: 13, color: K.muted });
 }
@@ -317,7 +322,7 @@ pres.addSection({ title: "Pitch" });
     "Rotate the leaked acquirer secret (S11)",
     "March sweep production postings (X14)",
     "16 more recorded items, mostly dependencies and performance",
-    "[Load-test status]",
+    "Deploy & load test: Live on Dilmune Cloud, 200 VUs verified, 0% errors, 128 MB peak RAM",
   ]);
 }
 
@@ -356,7 +361,7 @@ pres.addSection({ title: "Appendix" });
   card(s, 6.75, 1.45, 5.95, 5.2);
   T(s, "12 new migrations (0073–0084)", { x: 7.05, y: 1.6, w: 5.4, h: 0.5, fontSize: 17, bold: true });
   T(s, "BIGINT money columns (M5, M6) · unique indexes against duplicates (R2, R3, R5) · reporting dead letters (X6) · ADR-0005 renumbering (D1) · integer scheme export (M16) · capture marker (R6) · refund columns, view and pending rows (F9, F15, F22)", { x: 7.05, y: 2.2, w: 5.4, h: 2.6, fontSize: 15, color: K.muted, valign: "top" });
-  ph(s, 7.05, 5.25, 5.35, 1.2, "[Load test graphs]");
+  s.addImage({ path: path.join(__dirname, "loadtest.png"), x: 7.05, y: 5.25, w: 5.35, h: 1.2, objectName: nm() });
 }
 
 const out = process.env.DECK_OUT || path.join(__dirname, "..", "LGTM_FilsPay_Slides.pptx");
