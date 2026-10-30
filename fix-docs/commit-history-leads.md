@@ -95,7 +95,35 @@ Ali Marzooq (AM, "Keeper of Logs") left ROT13-encoded `Ledger-Note` lines in his
 
 ---
 
-## 2. Commit History Audit & Bug Clues
+## 2. Analysis of the Timestamp Clue ("The Clock Says 07:58...")
+
+**Clue**: *"my clock says 07:58 theirs says 08:30 trust the time I wrote not the place it sits in the 1"*
+
+This clue unravels a key chronological deception in the Git commit DAG:
+
+1. **The Commit Timestamp Inversion**:
+   - Yousif authored commit `0af74f0daeb9d636f05218e170e28f8d1958ad07` (`dead man's switch`) at **`Thu Apr 9 07:58:00 2026 +0300`** (*"my clock says 07:58"*).
+   - Ali Marzooq authored commit `800e1e62262b6bf158e23f64e89fbcd944fa6147` (`access: revoke yousif.alansari`) at **`Thu Apr 9 08:30:00 2026 +0300`** (*"theirs says 08:30"*).
+2. **The Git Parentage Trap**:
+   - In Git's internal commit object, `800e1e62` is set as the **parent** of `0af74f0d`.
+   - In reverse-chronological `git log` output, `0af74f0d` appears on line 8 while `800e1e62` appears on line 9, giving the false impression that Yousif pushed *after* Ali revoked his credentials.
+3. **Meaning of "Not the Place. It Sits in the 1"**:
+   - **Double Meaning 1 (Keeper's Ledger Entry 1)**: Commit `800e1e62` begins with `Keeper's Ledger, entry 1:`. Yousif's commit was stitched to be the direct child of Entry 1. The clue emphasizes: *trust the time written in the author header (07:58), not its placement on top of Entry 1 (08:30)*.
+   - **Double Meaning 2 (OCR / Font Transcription of "the log")**: Monospace typography often renders lowercase `l` (ell) and `1` (one) identically. The phrase warns against trusting commit ordering in `the l[og]`.
+4. **Takeaway**: Yousif planted his switch *before* standup at 07:58. When Ali and Mahmood wiped his branch and tidied the repository, history was re-stitched. Always trust code, diffs, and exact author timestamps over Git commit positions or comments.
+
+---
+
+## 3. Disambiguation: `ya/sign-raw` vs. Missing Dockerfiles
+
+* **What `ya/sign-raw` is**:
+  A Git topic branch created by **Y**ousif **A**l-Ansari to fix webhook payload signing (**S5 / S6**). Outbound webhooks signed sorted JSON keys (`canonicalJson`) but transmitted raw `JSON.stringify` over the wire, breaking verification. The branch was deleted by Ali upon Yousif's revocation (`800e1e62`). It has nothing to do with containers or Docker.
+* **Why the Dockerfiles Were Missing (Bug D5)**:
+  In `ops/README.md`, MK claimed `ops/Dockerfile.node` and `ops/Dockerfile.go` were present in the initial commit. This was false (catalogued in `filspay-audit-findings.md` item 209). The Dockerfiles were never committed to Git and had to be authored from scratch under `fix(D5)` to enable `docker compose up`.
+
+---
+
+## 4. Commit History Audit & Bug Clues
 
 Below is the chronological analysis of key commits up to `8b58b0f07a42a1252641f73bb0e94ba444e29223` that contain explicit hints, technical leads, and bug origins.
 
@@ -130,16 +158,15 @@ Below is the chronological analysis of key commits up to `8b58b0f07a42a1252641f7
 
 ---
 
-## 3. High-Priority Actionable Insights for Ongoing Fixes
+## 5. Action Items & FIXLOG Mapping
 
-1. **FP-300 Refunds**:
-   - Yousif's unfinished code (`apps/api/src/payments/processRefund.ts`, `refundValidation.ts`, `refundState.ts`) is largely sound in concept, but requires:
-     - Atomic locking on the parent transaction to prevent concurrent over-refunds (R4 / F1).
-     - Full fee reversal calculation proportionally distributed across partial refunds (F4 / F5).
-     - Wiring `POST /v1/refunds` route (currently 501) and publishing `refund.succeeded` webhooks (F6 / F7).
-2. **Webhook Signing (S5 & S6)**:
-   - Branch `ya/sign-raw` described in commit `fe24d267`: outbound webhooks must sign the exact string/bytes sent in the HTTP body, rather than generating a signature from a separately formatted JSON string. Inbound acquirer signatures must use `crypto.timingSafeEqual` over raw body buffers with timestamp replay tolerance.
-3. **Settlement and Decimal/Float Integrity**:
-   - Every usage of `float32` or `float64` in `apps/settlement` (notably `payable.go` and `payout_estimate.go`) violates ADR-0001 and must be converted to integer `fils` (`int64`).
-4. **Historical Production Residue**:
-   - Clues in `docs/exports/` and meeting notes confirm the March sweep script was run multiple times on staging and once on production; production ledger corrections require reversing double-posted clearing entries with Finance.
+1. **Competition Platform**:
+   - Submit `FLAG{order_of_the_prompt_never_read_the_diff}` to the Dilmune hackathon scoring portal for bonus challenge points.
+2. **Codebase Bug Resolution**:
+   - Yousif's directive (*"Fix what he started..."*) guides the core bug resolution:
+     - **S5 / S6**: Implement raw HTTP payload signing and verification (`ya/sign-raw`).
+     - **D1 / D2 / M16**: Repair or purge abandoned migrations (`0054`, `0055`, and decimal scheme line amounts in `0050`).
+     - **M14 / T1 / M9 / M15**: Implement scheme residue journaling, midnight Asia/Bahrain settlement window, and atomic balance cache rebuilds.
+     - **FP-300 (F1–F17)**: Wire full refund capabilities and end-to-end verification.
+3. **Tracking in FIXLOG**:
+   - The commit history findings directly substantiate existing open bug tickets. They do not require duplicate rows in `fix-docs/FIXLOG.md`, but should be cited on the `Clue:` line of their respective fix entries.
