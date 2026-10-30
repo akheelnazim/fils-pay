@@ -119,11 +119,14 @@ export async function processRefund(
     // mdr_bps, so a rate change after capture can never retroactively alter
     // what a refund reverses.
     const feeResult = await client.query<{ fee_fils: string }>(
-      `SELECT COALESCE(SUM(amount_fils), 0)::text AS fee_fils
+      // F4: net of the negotiated-discount adjustment (a debit on this
+      // account), and leaving out earlier refunds' own fee reversals. The
+      // filter relies on the 'refund: ...' descriptions written in step 3 below.
+      `SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)::text AS fee_fils
          FROM ledger_entries
         WHERE transaction_id = $1
           AND account_id = 'platform_fee_revenue'
-          AND direction = 'credit'`,
+          AND description NOT LIKE 'refund:%'`,
       [txn.id],
     );
     const feeRow = feeResult.rows[0];

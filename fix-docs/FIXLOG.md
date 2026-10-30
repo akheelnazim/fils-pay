@@ -100,6 +100,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F1 | Refundable is authorized − refunded, so a partial capture can refund money never charged | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F1)` |
 | F2 | Refund another merchant's transaction (IDOR) | `apps/api/src/refunds/initiateMerchantRefund.ts` | fixed | `feat(FP-300/F2)` |
 | F3 | Concurrent refunds both pass (FP-209) and one overwrites the other's total | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F3)` |
+| F4 | Refund fee reversal ignores the negotiated discount (reverses more than was kept) | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F4)` |
 | F6 | Refund route was a 501 stub at a different address than the dashboard posts to | `apps/api/src/routes/refunds.ts` | fixed | `feat(FP-300/F6)` |
 | F13 | `transactions.test.ts` asserted the refund 501 | `apps/api/src/routes/transactions.test.ts` | fixed | `feat(FP-300/F6)` |
 
@@ -625,6 +626,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it breaks: no refunds at all, from the API or the dashboard.
 - Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
 - Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
+
+#### F4 Fee reversal ignores the negotiated discount
+- Where: `apps/api/src/payments/processRefund.ts`
+- What's wrong: a full refund of 10 200 fils for a merchant on 250 bps with a 10 % discount reversed 255 fils of fee, though capture kept only 229 (255 credit, 26 discount debit).
+- Why: the fee charged was read as `SUM(amount_fils)` of the transaction's `platform_fee_revenue` *credits*; the discount is a debit on the same account.
+- What it breaks: discounted merchants got back more fee than they paid (26 fils here); platform fee revenue for the payment went negative.
+- Fix: read the net (credits − debits) on `platform_fee_revenue` for the transaction, leaving out legs whose description starts `refund:` (earlier refunds' reversals), so each refund is still measured against the fee charged at capture. Review: no other leg on that account carries a `transaction_id` (Go MDR recalculation and manual credits don't; M14 residue uses other accounts); the net can't go below 0 because the discount is at most 100 % of the fee. · Proper fix (if different): an `entry_type` column on `ledger_entries` (or the capture's fee and discount stored on the transaction) instead of matching on the description.
+- Test: `payments/processRefund.f4.fix.test.ts` (full refund of a discounted 10 200 reverses 229 and nets fee revenue to 0; half reverses 114; no discount still 250; two quarters reverse 57 each). Failed before: `255 !== 229` · ADR: none
 
 #### F3 Concurrent refunds both pass (FP-209)
 - Where: `apps/api/src/payments/processRefund.ts`
