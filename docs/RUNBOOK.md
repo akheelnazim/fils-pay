@@ -59,9 +59,11 @@ SELECT pl.id, pl.merchant_id, pl.reserved_at, pl.capture_transaction_id,
  WHERE pl.capture_transaction_id IS NOT NULL;
 ```
 
-Confirm the acquirer outcome in the acquirer's own portal and reconcile it
-with the ledger with Finance. Never retry the charge. Then, as a finance or
-super_admin user, report what you found (R7):
+First let the system ask the acquirer (R8): call the route below with only a
+`reason`. If it answers `acquirer_outcome_unknown` (the acquirer has no record,
+e.g. after a restart), confirm the outcome in the acquirer's own portal and
+reconcile it with the ledger with Finance. Never retry the charge. Then, as a
+finance or super_admin user, report what you found (R7):
 
 ```
 POST /v1/admin/payment-links/<link id>/recover-capture

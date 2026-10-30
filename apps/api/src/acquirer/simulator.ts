@@ -1,9 +1,11 @@
 import { randomInt, randomUUID } from "node:crypto";
+import { toFils } from "@filspay/money";
 import type { Config } from "../config.js";
 import { createSeededRng } from "./rng.js";
 import type {
   AcquirerAuthorizeRequest,
   AcquirerAuthorizeResult,
+  AcquirerCaptureLookup,
   AcquirerCaptureRequest,
   AcquirerCaptureResult,
   AcquirerOutcome,
@@ -93,6 +95,11 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
   const authorizeCache = new Map<string, AcquirerAuthorizeResult>();
   const captureCache = new Map<string, AcquirerCaptureResult>();
   const refundCache = new Map<string, AcquirerRefundResult>();
+  // R8: what this simulator approved, by acquirer reference, so lookupCapture
+  // can answer. Process-local like the caches above: after a restart every
+  // reference is "unknown" and recovery falls back to an operator's report.
+  const authorizedReferences = new Set<string>();
+  const capturedByReference = new Map<string, number>();
 
   async function applyLatency(): Promise<number> {
     const ms = random.int(config.acquirerLatencyMinMs, config.acquirerLatencyMaxMs);
@@ -133,6 +140,7 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
         ...(rolled.declineReason !== undefined ? { declineReason: rolled.declineReason } : {}),
         latencyMs,
       };
+      if (result.outcome === "approved") authorizedReferences.add(result.acquirerReference);
       authorizeCache.set(req.idempotencyKey, result);
       return result;
     },
@@ -149,6 +157,12 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
         acquirerReference: req.acquirerReference,
         latencyMs,
       };
+      if (result.outcome === "approved") {
+        capturedByReference.set(
+          req.acquirerReference,
+          (capturedByReference.get(req.acquirerReference) ?? 0) + Number(req.amountFils),
+        );
+      }
       captureCache.set(req.idempotencyKey, result);
       return result;
     },
@@ -167,6 +181,13 @@ export function createAcquirerSimulator(config: SimulatorConfig): AcquirerSimula
       };
       refundCache.set(req.idempotencyKey, result);
       return result;
+    },
+
+    async lookupCapture(acquirerReference: string): Promise<AcquirerCaptureLookup> {
+      const captured = capturedByReference.get(acquirerReference);
+      if (captured !== undefined) return { state: "captured", capturedFils: toFils(captured) };
+      if (authorizedReferences.has(acquirerReference)) return { state: "not_captured" };
+      return { state: "unknown" };
     },
   };
 }

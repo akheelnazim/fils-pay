@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import type { AcquirerSimulator } from "../acquirer/types.js";
 import { insertAdminAuditLog } from "../adminAudit/log.js";
 import { withTransaction } from "../db/withTransaction.js";
 import { voidTransaction } from "../payments/void.js";
@@ -8,7 +9,8 @@ export type AttestedCaptureOutcome = "captured" | "not_captured";
 
 export interface RecoverPaymentLinkInput {
   linkId: string;
-  attestedOutcome: AttestedCaptureOutcome;
+  /** R8: omitted means "ask the acquirer"; given means an operator checked it. */
+  attestedOutcome?: AttestedCaptureOutcome;
   reason: string;
   adminUserId: string;
 }
@@ -58,8 +60,47 @@ interface MarkedTransaction {
 export async function recoverPaymentLinkCapture(
   pool: Pool,
   input: RecoverPaymentLinkInput,
+  acquirer?: AcquirerSimulator,
 ): Promise<RecoverPaymentLinkResult> {
   let toVoid: { transactionId: string; merchantId: string } | null = null;
+
+  // R8: with no operator report, ask the acquirer, outside any lock (it can be
+  // slow). The answer is only a proposal: everything below re-checks it under
+  // the lock against the local books, exactly as for an operator's report.
+  let outcome = input.attestedOutcome;
+  const source = outcome ? "operator" : "acquirer_lookup";
+  if (!outcome) {
+    const marked = await pool.query<{ acquirer_reference: string; amount_fils: string | number }>(
+      `SELECT t.acquirer_reference, pl.amount_fils
+         FROM payment_links pl JOIN transactions t ON t.id = pl.capture_transaction_id
+        WHERE pl.id = $1 AND pl.status = 'reserved'`,
+      [input.linkId],
+    );
+    const row = marked.rows[0];
+    if (!row) {
+      const link = await pool.query(`SELECT 1 FROM payment_links WHERE id = $1`, [input.linkId]);
+      if (link.rowCount === 0) return { statusCode: 404, body: { error: "payment_link_not_found" } };
+      const earlier = await pool.query(
+        `SELECT 1 FROM admin_audit_log
+          WHERE action = 'payment_link_capture_recovery' AND target_type = 'payment_link' AND target_id = $1`,
+        [input.linkId],
+      );
+      return (earlier.rowCount ?? 0) > 0
+        ? { statusCode: 200, body: { alreadyResolved: true } }
+        : { statusCode: 409, body: { error: "not_awaiting_recovery" } };
+    }
+    const lookup = acquirer?.lookupCapture
+      ? await acquirer.lookupCapture(row.acquirer_reference)
+      : ({ state: "unknown" } as const);
+    if (lookup.state === "unknown") {
+      return { statusCode: 409, body: { error: "acquirer_outcome_unknown", hint: "report attestedOutcome after checking the acquirer" } };
+    }
+    if (lookup.state === "captured" && Number(lookup.capturedFils) !== Number(row.amount_fils)) {
+      return { statusCode: 409, body: { error: "acquirer_amount_mismatch", acquirerCapturedFils: Number(lookup.capturedFils) } };
+    }
+    outcome = lookup.state;
+  }
+  const decided: AttestedCaptureOutcome = outcome;
 
   const result = await withTransaction(pool, async (client): Promise<RecoverPaymentLinkResult> => {
     const linkResult = await client.query<LockedLink>(
@@ -79,13 +120,13 @@ export async function recoverPaymentLinkCapture(
           ORDER BY created_at DESC LIMIT 1`,
         [input.linkId],
       );
-      const outcome = earlier.rows[0]?.outcome;
-      if (outcome === input.attestedOutcome) {
+      const earlierOutcome = earlier.rows[0]?.outcome;
+      if (earlierOutcome === decided) {
         return { statusCode: 200, body: { alreadyResolved: true, status: link.status } };
       }
       return {
         statusCode: 409,
-        body: { error: outcome ? "already_resolved_differently" : "not_awaiting_recovery", status: link.status },
+        body: { error: earlierOutcome ? "already_resolved_differently" : "not_awaiting_recovery", status: link.status },
       };
     }
 
@@ -101,7 +142,7 @@ export async function recoverPaymentLinkCapture(
     const capturedHere = txn.status === "captured" && Number(txn.captured_fils) === Number(link.amount_fils);
     const anyCaptureHere = Number(txn.captured_fils) > 0;
 
-    if (input.attestedOutcome === "captured") {
+    if (decided === "captured") {
       if (!capturedHere) return { statusCode: 409, body: { error: "ledger_not_reconciled" } };
       await client.query(
         `UPDATE payment_links
@@ -126,14 +167,15 @@ export async function recoverPaymentLinkCapture(
       targetType: "payment_link",
       targetId: link.id,
       metadata: {
-        attestedOutcome: input.attestedOutcome,
+        attestedOutcome: decided,
+        source,
         reason: input.reason,
         transactionId: link.capture_transaction_id,
       },
     });
     return {
       statusCode: 200,
-      body: { alreadyResolved: false, status: input.attestedOutcome === "captured" ? "paid" : "active" },
+      body: { alreadyResolved: false, status: decided === "captured" ? "paid" : "active" },
     };
   });
 

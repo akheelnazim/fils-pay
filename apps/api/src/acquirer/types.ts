@@ -57,8 +57,20 @@ export interface AcquirerRefundResult {
   latencyMs: number;
 }
 
+/**
+ * R8: what the acquirer knows about captures on an authorization.
+ * "unknown" means it can't say (e.g. it has no record of the reference), so
+ * the caller must not act on it.
+ */
+export type AcquirerCaptureLookup =
+  | { state: "captured"; capturedFils: Fils }
+  | { state: "not_captured" }
+  | { state: "unknown" };
+
 export interface AcquirerSimulator {
   authorize(req: AcquirerAuthorizeRequest): Promise<AcquirerAuthorizeResult>;
   capture(req: AcquirerCaptureRequest): Promise<AcquirerCaptureResult>;
   refund(req: AcquirerRefundRequest): Promise<AcquirerRefundResult>;
+  /** R8: optional; an acquirer without it is treated as "unknown". */
+  lookupCapture?(acquirerReference: string): Promise<AcquirerCaptureLookup>;
 }

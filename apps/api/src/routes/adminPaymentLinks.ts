@@ -31,20 +31,25 @@ export async function adminPaymentLinkRoutes(app: FastifyInstance): Promise<void
       if (!UUID_RE.test(request.params.id)) throw new NotFoundError("payment_link_not_found");
 
       const { attestedOutcome, reason } = request.body ?? {};
-      if (attestedOutcome !== "captured" && attestedOutcome !== "not_captured") {
-        throw new BadRequestError("invalid_request", "attestedOutcome must be 'captured' or 'not_captured'");
+      // R8: omit attestedOutcome to have the acquirer asked instead.
+      if (attestedOutcome !== undefined && attestedOutcome !== "captured" && attestedOutcome !== "not_captured") {
+        throw new BadRequestError("invalid_request", "attestedOutcome must be 'captured', 'not_captured' or omitted");
       }
       const trimmed = typeof reason === "string" ? reason.trim() : "";
       if (trimmed.length < MIN_REASON || trimmed.length > MAX_REASON || trimmed.includes("\0")) {
         throw new BadRequestError("invalid_request", `reason is required (${MIN_REASON}-${MAX_REASON} characters)`);
       }
 
-      const result = await recoverPaymentLinkCapture(app.db, {
-        linkId: request.params.id,
-        attestedOutcome: attestedOutcome as AttestedCaptureOutcome,
-        reason: trimmed,
-        adminUserId: adminAuth.adminUserId,
-      });
+      const result = await recoverPaymentLinkCapture(
+        app.db,
+        {
+          linkId: request.params.id,
+          attestedOutcome: attestedOutcome as AttestedCaptureOutcome | undefined,
+          reason: trimmed,
+          adminUserId: adminAuth.adminUserId,
+        },
+        app.acquirer,
+      );
       reply.code(result.statusCode).send(result.body);
     },
   );
