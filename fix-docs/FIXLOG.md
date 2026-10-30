@@ -84,7 +84,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | D2 | Migration 0055 uses non-existent columns | `db/migrations/` | fixed | `fix(D2)` |
 | D3 | Dev webhook key fallback is 34 bytes, not 32 | `apps/api/src/config.ts` | fixed | `fix(D3)` |
 | D4 | API has no CORS; dashboard can't call it | `apps/api/src/plugins/cors.ts` | fixed | `fix(D4)` |
-| D5 | Dockerfiles referenced by compose are missing | open | |
+| D5 | Dockerfiles referenced by compose are missing; settlement compose startup misconfigured | `ops/Dockerfile.node`, `ops/Dockerfile.go`, `ops/docker-compose.yml` | fixed | `fix(D5)` |
 
 ### FP-300 refunds (feature, last) (F)
 
@@ -532,6 +532,15 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `reporting/consumer/applyEvent.fix.test.ts` (crashed before, warns and records the payout trend now); reporting suite 12/12 · ADR: none
 
 ### Deploy and setup (D)
+
+#### D5 Compose services cannot build or start
+- Where: `ops/Dockerfile.node`, `ops/Dockerfile.go`, `ops/docker-compose.yml`
+- What's wrong: Compose referenced missing Dockerfiles; once added, settlement received an invalid subcommand and lacked its required internal token.
+- Why: the image build definitions were absent and compose's command/environment disagreed with the binary entrypoint and daemon config.
+- What it breaks: the documented Docker startup cannot build or keep settlement running, preventing local use of the API's settlement functions.
+- Fix: add Node and Go multi-stage Dockerfiles; pass `daemon` to the Go entrypoint and provide the local `dev-token`.
+- Test: `docker compose -f ops/docker-compose.yml config`, image build, migrations through 0077, seed, and all core containers running · ADR: none · Commit: pending
+- Conflicts: squash merge overlapped D4/D5 tracker rows; kept main's fixed D4 row and D5's new fixed row.
 
 #### D1 Migration 0054 breaks a fresh database (and uses a reserved number)
 - Where: `db/migrations/`

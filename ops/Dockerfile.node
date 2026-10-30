@@ -1,0 +1,25 @@
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+# argon2 is a native dependency and npm may need to compile it for the
+# container architecture when a prebuilt binary is unavailable.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the complete workspace dependency graph. Runtime commands in compose
+# execute TypeScript directly and the migrate/seed jobs need the root workspace.
+COPY package.json package-lock.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/admin/package.json ./apps/admin/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/reporting/package.json ./apps/reporting/package.json
+COPY packages/events/package.json ./packages/events/package.json
+COPY packages/money/package.json ./packages/money/package.json
+RUN npm ci
+
+COPY . .
+
+EXPOSE 3000
+CMD ["npx", "tsx", "apps/api/src/index.ts"]
