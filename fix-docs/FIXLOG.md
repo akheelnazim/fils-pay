@@ -78,7 +78,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X9 | Reconciliation page crashes when the calculated gap is negative | `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx` | fixed | `fix(X9)` |
 | X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html`, `apps/web/src/pages/checkout/CheckoutPage.tsx` | fixed | `fix(X10)` |
 | X11 | Merchant UI root URL renders React Router's unexpected application 404 | `apps/web/src/router.tsx` | fixed | `fix(X11)` |
-| X12 | Merchant analytics accepts impossible dates and can return a database error | `apps/api/src/routes/analytics.ts` | open | |
+| X12 | Merchant analytics accepts impossible dates and can return a database error | `apps/api/src/routes/analytics.ts` | fixed | `fix(X12)` |
 
 ### Deploy and setup (D)
 
@@ -543,8 +543,8 @@ Keep each entry short. One per bug, under its class heading:
 - What's wrong: JavaScript normalizes dates such as `2026-02-30` to March 2, so the validator accepts the impossible date and passes the original string to PostgreSQL.
 - Why: `Date.parse` validates parseability, not an exact calendar-date round trip.
 - What it breaks: analytics and overview requests using an impossible `from` or `to` can fail as a server error instead of returning the documented 400 validation error.
-- Fix: parse year/month/day explicitly and verify they round-trip to the same calendar date before querying.
-- Test: verified `Date.parse("2026-02-30")` normalizes to `2026-03-02`; PostgreSQL rejects the original value · ADR: none
+- Fix: validate year, month, and day bounds directly, including leap-year month lengths, before querying.
+- Test: `apps/api/src/routes/analytics.x12.fix.test.ts` (impossible February dates and month 13 rejected; valid leap day accepted); failed before because 2026-02-30 returned true · ADR: none · Commit: `fix(X12)`
 
 #### X11 Merchant UI root URL has no route
 - Where: `apps/web/src/router.tsx`

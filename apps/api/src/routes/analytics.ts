@@ -20,9 +20,15 @@ interface TopLinksQuery extends DateRangeQuery {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Strict YYYY-MM-DD that also round-trips through Date (rejects 2026-02-30). */
-function isValidDateString(value: string): boolean {
-  return DATE_RE.test(value) && !Number.isNaN(Date.parse(value));
+/** Strict YYYY-MM-DD that rejects impossible year/month/day combinations. */
+export function isValidDateString(value: string): boolean {
+  if (!DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  if (year === undefined || month === undefined || day === undefined || year < 1 || month < 1 || month > 12) {
+    return false;
+  }
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day >= 1 && day <= daysInMonth;
 }
 
 function pad2(n: number): string {
