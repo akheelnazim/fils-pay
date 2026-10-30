@@ -2,6 +2,8 @@
 
 Comments extracted from the Vite-served merchant UI HTML shared during the audit on 2026-10-30. They are retained as investigation clues; comments are not proof of a bug. The source implementation was checked where possible.
 
+The browser page supplied alongside the HTML also showed React Router's default `Unexpected Application Error! 404 Not Found` screen at the site root. This is tracked as **X11**: `apps/web/src/router.tsx` has no `/` or catch-all route, so `/` displays the framework error instead of a useful merchant entry point.
+
 | Source | Comment | Assessment |
 | --- | --- | --- |
 | `apps/web/index.html` | `am: title says Checkout but this is the whole dashboard too` | **Confirmed UI bug; tracked as X10 in FIXLOG.** The shared document title is `FilsPay Checkout` on dashboard and checkout routes alike. |
