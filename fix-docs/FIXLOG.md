@@ -170,7 +170,7 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 | X15 | Admin "Rebuild analytics" double-counts unconsumed events | `apps/api/src/admin/reportingRebuild.ts` | open | |
 | D6 | Compose gives the API no settlement token; docs claim a `dev-token` default | `ops/docker-compose.yml` | open | |
 | X16 | Payout trends can stay "closed" forever | `apps/reporting/src/consumer/applyEvent.ts` | open | |
-| T5 | Admin Settlement page pre-fills the wrong (UTC) date | `apps/admin/src/pages/settlement/SettlementPage.tsx` | open | |
+| T5 | Admin Settlement page pre-fills the wrong (UTC) date | `apps/admin/src/pages/settlement/SettlementPage.tsx` | fixed | this commit |
 | X17 | Call to a Go endpoint that doesn't exist; docs naming env vars nothing reads | `apps/api/src/admin/settlementClient.ts`, `docs/` | open | |
 | X18 | Dead code: `v1/` tree, `transactions/lookup.ts`, `receipt.ts`, reporting `queryOne.ts`, `notifySettlementRefundAdjustment` | `apps/api/src/v1/` | open | |
 | V1 | npm audit: 3 high, 5 moderate (`sharp` on uploaded files, `fastify`, `react-router-dom`, `vite`) | `apps/api/package.json`, `apps/web`, `apps/admin` | open | |
@@ -194,6 +194,12 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 - What / why: settlement discounted the amount before rounding MDR while the capture ledger discounts the rounded fee, causing one-fil discrepancies.
 - Fix: apply MDR first, then the discount to the rounded fee, using checked integer operations. Existing closed batches do not change automatically.
 - Test: `discounted_fee_m21_fix_test.go` failed before: `amount 10200, mdr 250, discount 1000: got 230, want 229`. Updated `discounted_fee_test.go`, which asserted the old order.
+
+### T5 — Default settlement to yesterday in Bahrain
+- Where: `apps/admin/src/pages/settlement/businessDate.ts`.
+- What / why: the settlement form combined browser-local date arithmetic with UTC formatting, sometimes selecting the wrong business day.
+- Fix: derive Bahrain's calendar date and subtract one calendar day, independent of the browser time zone.
+- Test: `SettlementPage.t5.fix.test.ts` checks Bahrain midnight, leap day and year rollover. Before the fix `2026-10-29T21:00:00Z` returned `2026-10-28` instead of `2026-10-29`.
 
 #### R6 Reservation can expire while a payment-link capture is in progress
 - Where: `apps/api/src/paymentLinks/pay.ts`
