@@ -3,6 +3,7 @@
 //	settlement daemon
 //	settlement run-batch --date=2026-09-09 [--merchant=<uuid>]
 //	settlement rebuild-balances [--merchant=<uuid>]
+//	settlement payout-estimate-report
 //	settlement export-scheme-file --batch=<uuid> --out=<path>
 //
 // Every subcommand is CLI-invoked (by a human, by the container's own CMD,
@@ -172,6 +173,18 @@ func main() {
 			fmt.Printf("  merchant=%s before=%d after=%d%s\n", merchantID, diff.CachedBefore, diff.Rebuilt, changed)
 		}
 
+	case "payout-estimate-report":
+		// M19: read-only; lists merchants whose stored lifetime payout estimate
+		// differs from the payouts in the ledger. Writes nothing.
+		drifts, err := settlement.LifetimePayoutEstimateDrift(ctx, pool)
+		if err != nil {
+			log.Fatalf("settlement payout-estimate-report: %v", err)
+		}
+		fmt.Printf("payout-estimate-report: %d merchant(s) differ\n", len(drifts))
+		for _, d := range drifts {
+			fmt.Printf("  merchant=%s stored=%d actual=%d drift=%d\n", d.MerchantID, d.StoredFils, d.ActualFils, d.DriftFils)
+		}
+
 	case "export-scheme-file":
 		fs := flag.NewFlagSet("export-scheme-file", flag.ExitOnError)
 		batchFlag := fs.String("batch", "", "settlement batch UUID (required)")
@@ -205,5 +218,6 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  settlement daemon")
 	fmt.Fprintln(os.Stderr, "  settlement run-batch --date=YYYY-MM-DD [--merchant=<uuid>]")
 	fmt.Fprintln(os.Stderr, "  settlement rebuild-balances [--merchant=<uuid>]")
+	fmt.Fprintln(os.Stderr, "  settlement payout-estimate-report")
 	fmt.Fprintln(os.Stderr, "  settlement export-scheme-file --batch=<uuid> --out=<path>")
 }

@@ -68,6 +68,19 @@ API workers and reconcile their in-flight or stale reservations before
 enabling the new workers. Old workers do not honor the new marker, and
 reservations created before the migration have no marker.
 
+## A merchant's lifetime payout figure looks wrong
+
+`merchants.lifetime_net_payout_monitoring_estimate` is a running monitoring
+total, not a payout figure; some historical values carry drift (M19). To
+compare it with the payouts actually in the ledger (read-only, changes
+nothing):
+
+```bash
+settlement payout-estimate-report
+```
+
+Agree any correction with Finance before changing a stored value.
+
 ## A merchant's balance looks wrong
 
 `merchant_balances` is a cache. Recompute it:

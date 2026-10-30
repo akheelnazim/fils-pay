@@ -60,7 +60,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M16 | Scheme export stores a duplicate decimal amount instead of integer fils | `db/migrations/0050_scheme_export_lines_acquirer_amount.sql`, `apps/settlement/internal/settlement/` | fixed | `fix(M16)` |
 | M17 | Go rate and split calculations can overflow before division | `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go` | fixed | `fix(M17)` |
 | M18 | Split payouts do not update the lifetime payout estimate | `apps/settlement/internal/splits/allocate.go` | fixed | `fix(M18)` |
-| M19 | Historical lifetime payout estimates retain drift and missing split payouts | `apps/settlement/internal/settlement/payout_estimate.go` | open | |
+| M19 | Historical lifetime payout estimates retain drift and missing split payouts | `apps/settlement/internal/settlement/payout_estimate.go` | partly fixed: report added, correction waits on Finance | `fix(M19)` |
 | M20 | Monthly payout estimate overstates partially allocated split payouts | `apps/settlement/internal/settlement/payout_estimate.go` | open | |
 
 ### Settlement timing and test merchants (T)
@@ -176,6 +176,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 - Where: `apps/settlement/internal/settlement/payout_estimate.go`
 - What's wrong: M5 converted old float estimates to integer fils without rebuilding drifted historical totals; past split payouts were also omitted before M18.
 - Next: reconcile historical actual payouts with Finance before any correction. Do not blindly sum batch net payouts: a split can allocate less than its batch net.
+- Done (report only): `settlement payout-estimate-report` (`LifetimePayoutEstimateDrift`) lists every merchant whose stored estimate differs from the payout legs in the ledger (`platform_cash` credits described `settlement payout:%`, which covers whole-batch payouts and split payouts, so a split that allocates less than its batch net is counted at what was paid). Read-only; nothing is written. Finance can run it, agree each figure, and only then correct the stored values. Not done: the correction itself (a data change on production totals, by the item's own note a Finance decision). Run it only against a database you intend to read; it does not modify data. · Proper fix (if different): once Finance agrees, a one-off audited correction migration, or derive the estimate from the ledger instead of keeping a running total.
+- Test: `settlement/payout_estimate_m19_fix_test.go` (stored 5 000 vs 6 200 paid is reported as −1 200 including a split payout; matching and empty merchants are not reported; the report writes nothing). Failed before: build error, no report existed · ADR: none
 
 #### M20 Monthly payout estimate overstates partially allocated splits
 - Where: `apps/settlement/internal/settlement/payout_estimate.go`
