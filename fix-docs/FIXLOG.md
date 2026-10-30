@@ -31,8 +31,8 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
 | R1 | Payment link charged twice (2026-05-14) | open | |
-| R2 | Duplicate acquirer callback notes (FP-201) | open | |
-| R3 | Duplicate payout notifications (2026-08-21) | open | |
+| R2 | Duplicate acquirer callback notes (FP-201) | `apps/api/src/acquirer/callbacks.ts` | on hold (fix proposed) | |
+| R3 | Duplicate payout notifications (2026-08-21) | `apps/settlement/internal/settlement/payout_notify.go` | on hold (fix proposed) | |
 | R5 | Adjustment CSV importable twice | open | |
 
 ### Money correctness (M)
@@ -272,6 +272,31 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `routes/adminCredits.fix.test.ts` (support create returned 201 before, 403 now; finance still 201) · ADR: none
 
 ### Races and duplicates (R)
+
+#### R2 Duplicate acquirer callback notes (FP-201) — on hold, fix proposed
+- Where: `apps/api/src/acquirer/callbacks.ts`
+- What's wrong: a redelivered acquirer callback (same `callbackId`) writes a second note; five concurrent deliveries write five.
+- Why: plain `INSERT` and no unique index on `acquirer_callback_notes.callback_id`. The "`processed_events`" dedupe in the postmortem and 0051's "FP-238 unique index — done" were never built.
+- What it breaks: duplicate verdicts on the transaction timeline (the May incident started from two notes on one link).
+- Proposed fix (owner chose: archive duplicates, reversible): next free migration (0074+):
+  1. `CREATE TABLE acquirer_callback_notes_duplicates (LIKE acquirer_callback_notes INCLUDING DEFAULTS, archived_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
+  2. move every row after the earliest per `callback_id` (`row_number() OVER (PARTITION BY callback_id ORDER BY created_at, id) > 1`) with `WITH moved AS (DELETE … RETURNING *) INSERT INTO …_duplicates SELECT *, now() FROM moved`;
+  3. `CREATE UNIQUE INDEX acquirer_callback_notes_callback_id_key ON acquirer_callback_notes (callback_id)`;
+  4. header comment with the undo: `DROP INDEX …; INSERT INTO acquirer_callback_notes SELECT <columns> FROM …_duplicates; DROP TABLE …_duplicates`.
+  Code: `INSERT … ON CONFLICT (callback_id) DO NOTHING` (redelivery returns normally, no throw).
+- Test (written, parked): `fix-docs/pending/R2/callbacks.fix.test.ts` → move to `apps/api/src/acquirer/`. Fails today 2 ≠ 1 (redelivery) and 5 ≠ 1 (concurrent); distinct callbacks still give 2.
+
+#### R3 Duplicate settlement.paid notifications (2026-08-21) — on hold, fix proposed
+- Where: `apps/settlement/internal/settlement/payout_notify.go`
+- What's wrong: when the daemon and the CLI run together, both pass the `NOT EXISTS` check and each inserts a `settlement.paid` outbox event, so the merchant gets two payout webhooks and the dispatcher writes a second disbursement record.
+- Why: check-then-insert with no unique index on `outbox_events`; the FP-208 advisory lock listed as "Done" does not exist.
+- Proposed fix (archive duplicates, reversible): next free migration after R2's:
+  1. side tables `outbox_events_duplicates` and `webhook_deliveries_duplicates` (`LIKE … INCLUDING DEFAULTS` + `archived_at`);
+  2. for `event_type = 'settlement.paid'`, keep the earliest event per `aggregate_id`; move the later events' `webhook_deliveries` rows first (FK from 0022), then the events (also check `webhook_delivery_archives` from 0068 and disbursement rows from 0057 for references, and archive the same way);
+  3. `CREATE UNIQUE INDEX outbox_events_settlement_paid_once ON outbox_events (aggregate_id) WHERE event_type = 'settlement.paid'`;
+  4. undo SQL in the header (re-insert deliveries after events, drop the index).
+  Code: `INSERT … ON CONFLICT (aggregate_id) WHERE event_type = 'settlement.paid' DO NOTHING`, and only `count++` when a row was inserted (`RowsAffected() == 1`).
+- Test to write: Go `payout_notify_fix_test.go`: two concurrent `EnqueuePayoutNotifications` over one paid batch → exactly one event, combined count = 1; a second sequential run enqueues 0.
 
 ### Money correctness (M)
 
