@@ -64,10 +64,10 @@ already exists:
 | Route | `POST /v1/refunds` (API keys) and `POST /v1/merchants/:merchantId/refunds` (dashboard), both in `apps/api/src/routes/refunds.ts` | live (FP-300/F6): owner/finance or API key, `Idempotency-Key` header required, body `{ transactionId, amountFils?, reason? }` |
 | Core helper | `apps/api/src/payments/processRefund.ts` | complete, tested |
 | Validation / status | `refundValidation.ts`, `refundState.ts` | complete, tested |
-| Fee reversal | `calculateRefundFee()` in `packages/money` | complete |
+| Fee reversal | `calculateRefundFee()` in `packages/money`, capped and net of discount in `processRefund.ts` | complete (FP-300/F4, F5) |
 | Schema | `refunds` (0042), `transactions.refunded_fils` (0043), event types (0044) | migrated |
 | Settlement | batch reopen in `apps/settlement` | to do |
-| Webhook | add `refund.succeeded` to the eligible list in `dispatcher.ts` | to do |
+| Webhook | `refund.succeeded`: `buildEnvelope` case in `webhooks/envelope.ts`, eligible list in `dispatcher.ts` | live (FP-300/F7): data `{ transactionId, merchantId, refundId, amountFils, feeReversedFils, status, refundedTotalFils }` |
 | UI | `apps/web/src/pages/transactions/RefundDrawer.tsx` | on the transaction detail page (FP-300/F6) |
 
 It should mostly be wiring. A previous attempt (FP-170, January) was

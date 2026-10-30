@@ -113,6 +113,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F5 | Partial refunds' fee reversals can exceed the fee, or fall short when everything is returned | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F5)` |
 | F6 | Refund route was a 501 stub at a different address than the dashboard posts to | `apps/api/src/routes/refunds.ts` | fixed | `feat(FP-300/F6)` |
 | F13 | `transactions.test.ts` asserted the refund 501 | `apps/api/src/routes/transactions.test.ts` | fixed | `feat(FP-300/F6)` |
+| F7 | `refund.succeeded` never sent to webhooks (no envelope case, not in the eligible list) | `apps/api/src/webhooks/dispatcher.ts` | fixed | `feat(FP-300/F7)` |
 
 ### Test suite (Q)
 
@@ -709,6 +710,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it breaks: no refunds at all, from the API or the dashboard.
 - Fix: user decision (2026-10-30): keep the documented `/v1/refunds` for API-key integrations and add `/v1/merchants/:merchantId/refunds` for the dashboard; one handler. `requireMerchantAuth` + `requireMerchantRole("owner","finance")` (API keys pass by design); `Idempotency-Key` required (≤ 255 chars); body `{ transactionId (uuid), amountFils? (positive whole fils), reason? (≤ 500 chars, no NUL) }`; the merchant always comes from the login, and the scoped address also checks the path (`assertRefundRequestScope`). Review: validation errors came back as `{ ok:false, code }` with no `error`, so the drawer showed nothing; `processRefund` now answers `{ error, ...details }` like the rest of the API (three existing tests updated). Long keys and NUL reasons gave 500s; now 400. RefundDrawer restored on the transaction detail page, also for `partially_refunded`. ONBOARDING's refund table updated. F13: the 501 test in `routes/transactions.test.ts` now checks the route answers (400 on an empty body); its cross-tenant comment points at the new tests. · Proper fix (if different): same; the drawer could map error codes to friendly text.
 - Test: `routes/refunds.fix.test.ts` (43 cases, run against both addresses: API key, owner and finance sessions refund; support 403; no login 401; missing key 400; replay returns the same body and refunds once; another merchant's transaction 404; refunds on hold 403; bad bodies 400; over-long key and bad reasons 400; over-limit refund gives `{ error, refundableFils }`; impersonation 403; scoped address with a foreign path merchant 403). 29 failed before (the route was a stub) · ADR: none
+
+#### F7 Refunds never reach the merchant's webhook
+- Where: `apps/api/src/webhooks/envelope.ts`, `apps/api/src/webhooks/dispatcher.ts`
+- What's wrong: `processRefund` writes a `refund.succeeded` outbox event, but no webhook was ever sent for it.
+- Why: the dispatcher's eligible list left the type out, and `buildEnvelope` had no case for it (adding only the list entry would have thrown in Step A and stalled every delivery).
+- What it breaks: integrations never learn of a refund, so their books disagree with FilsPay's.
+- Fix: `buildEnvelope` case and `WebhookEventType` entry first, then the list entry. Public data `{ transactionId, merchantId, refundId, amountFils, feeReversedFils, status, refundedTotalFils }` (`status` from the payload's `newStatus`, as for captures). No backlog flood: every refund crashed before F14, so no older `refund.succeeded` events exist, and Step A only sends events newer than the endpoint. Removed the comment in `packages/events/src/outbox.ts` claiming the dispatcher already handled it; ONBOARDING updated. · Proper fix (if different): same.
+- Test: `webhooks/envelope.f7.fix.test.ts` (the envelope shape; a real refund delivered once to the merchant's endpoint with the exact data and a signature that verifies). Failed before: `buildEnvelope: unsupported event type "refund.succeeded"` · ADR: none
 
 #### F5 Partial refunds' fee reversals don't add up to the fee
 - Where: `apps/api/src/payments/processRefund.ts`
