@@ -67,7 +67,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
-| X1 | `expire_holds.ts` can delete every hold | open | |
+| X1 | `expire_holds.ts` can delete every hold | `scripts/expire_holds.ts` | fixed | `fix(X1)` |
 | X2 | March sweep script not idempotent | open | |
 | X3 | Large export can OOM the API | open | |
 | X4 | Credit threshold can be split around | open | |
@@ -338,6 +338,15 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `routes/adminMerchantsRecompute.fix.test.ts` (test merchant stays test, live stays live, with an authorization; the first failed before) · ADR: none
 
 ### Scripts and other (X)
+
+#### X1 Nightly hold clean-up can delete every hold
+- Where: `scripts/expire_holds.ts`
+- What's wrong: on a night with no expired holds the cron ran `DELETE FROM holds` with no WHERE; on other nights it deleted the expired holds instead of marking them.
+- Why: it read the expired ids, then built the DELETE with `lib/sqlFilter.ts` `buildWhere`, which silently drops a filter whose array is empty. HANDOVER says the script flips `active` to `expired` with one UPDATE and holds are never deleted.
+- What it breaks: every hold (and with it every open authorization's reserved amount and history) wiped on a quiet night; on busy nights hold history lost, and a hold captured between the SELECT and the DELETE could still be deleted.
+- Fix: one `UPDATE holds SET status = 'expired' WHERE status = 'active' AND expires_at < now()`; deleted `lib/sqlFilter.ts` and `expire_holds.test.ts`, which only served the DELETE (the latter asserted its SQL text). · Smallest alternative (not used): return early on an empty list; it would still delete holds against HANDOVER and keep the read-then-delete gap.
+- Note: the `MK` comment in `db/migrations/0005_holds.sql` (script deletes rows, 'expired' is transient) is false; left as is because the migration has applied.
+- Test: `scripts/expire_holds.fix.test.ts` (quiet night changes nothing, expired hold marked not deleted, other statuses untouched, count never drops; all in a rolled-back transaction; three failed before) · ADR: none
 
 #### X8 Reporting crashes on its own lag check
 - Where: `apps/reporting/src/consumer/applyEvent.ts`
