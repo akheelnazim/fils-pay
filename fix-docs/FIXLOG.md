@@ -78,6 +78,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X9 | Reconciliation page crashes when the calculated gap is negative | `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx` | fixed | `fix(X9)` |
 | X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html`, `apps/web/src/pages/checkout/CheckoutPage.tsx` | fixed | `fix(X10)` |
 | X11 | Merchant UI root URL renders React Router's unexpected application 404 | `apps/web/src/router.tsx` | fixed | `fix(X11)` |
+| X12 | Merchant analytics accepts impossible dates and can return a database error | `apps/api/src/routes/analytics.ts` | open | |
 
 ### Deploy and setup (D)
 
@@ -535,6 +536,15 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `reporting/consumer/applyEvent.fix.test.ts` (crashed before, warns and records the payout trend now); reporting suite 12/12 · ADR: none
 
 ### Merchant UI findings (X)
+
+#### X12 Analytics accepts impossible calendar dates
+- Where: `apps/api/src/routes/analytics.ts`
+- Clue: the `isValidDateString` comment promises invalid calendar dates are rejected, but it only checks whether `Date.parse` returns `NaN`.
+- What's wrong: JavaScript normalizes dates such as `2026-02-30` to March 2, so the validator accepts the impossible date and passes the original string to PostgreSQL.
+- Why: `Date.parse` validates parseability, not an exact calendar-date round trip.
+- What it breaks: analytics and overview requests using an impossible `from` or `to` can fail as a server error instead of returning the documented 400 validation error.
+- Fix: parse year/month/day explicitly and verify they round-trip to the same calendar date before querying.
+- Test: verified `Date.parse("2026-02-30")` normalizes to `2026-03-02`; PostgreSQL rejects the original value · ADR: none
 
 #### X11 Merchant UI root URL has no route
 - Where: `apps/web/src/router.tsx`
