@@ -173,6 +173,13 @@ Not fixed yet. Details, evidence and suggested fixes: `fix-docs/scan-2026-10-30.
 | T5 | Admin Settlement page pre-fills the wrong (UTC) date | `apps/admin/src/pages/settlement/SettlementPage.tsx` | open | |
 | X17 | Call to a Go endpoint that doesn't exist; docs naming env vars nothing reads | `apps/api/src/admin/settlementClient.ts`, `docs/` | open | |
 | X18 | Dead code: `v1/` tree, `transactions/lookup.ts`, `receipt.ts`, reporting `queryOne.ts`, `notifySettlementRefundAdjustment` | `apps/api/src/v1/` | open | |
+| V1 | npm audit: 3 high, 5 moderate (`sharp` on uploaded files, `fastify`, `react-router-dom`, `vite`) | `apps/api/package.json`, `apps/web`, `apps/admin` | open | |
+| V2 | govulncheck: 37 reachable, mostly the Go 1.22 stdlib (out of support); `pgx` 5.7.2, `x/text` 0.21.0 | `apps/settlement/go.mod`, `ops/Dockerfile.go` | open | |
+| V3 | API image on Node 20 (end of life); build tools and `tsx` in the runtime image | `ops/Dockerfile.node` | open | |
+| P1 | Unused dependencies: `chalk`, `lodash`, `dotenv` (API), `github.com/pkg/errors` (Go) | `apps/api/package.json`, `apps/settlement/go.mod` | open | |
+| P2 | Missing indexes: `ledger_entries.transaction_id`, `.settlement_batch_id`, `transaction_events.settlement_batch_id` (sequential scans) | `db/migrations/` | open | |
+| P3 | Balance rebuild runs four queries per merchant (18k merchants) | `apps/settlement/internal/ledger/rebuild.go` | open | |
+| P4 | Row-by-row writes that could be one statement (status recompute, scheme export lines, webhook fan-out) | various | open | |
 
 ## Findings and follow-ups from later review
 
