@@ -59,7 +59,9 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | `apps/settlement/internal/ledger/rebuild.go` | fixed | `fix(M15)` |
 | M16 | Scheme export stores a duplicate decimal amount instead of integer fils | `db/migrations/0050_scheme_export_lines_acquirer_amount.sql`, `apps/settlement/internal/settlement/` | fixed | `fix(M16)` |
 | M17 | Go rate and split calculations can overflow before division | `apps/settlement/internal/money/fils.go`, `apps/settlement/internal/splits/shares.go` | fixed | `fix(M17)` |
-| M18 | Historical lifetime payout estimates retain drift and omit split payouts | `apps/settlement/internal/settlement/payout_estimate.go`, `apps/settlement/internal/splits/allocate.go` | open | |
+| M18 | Split payouts do not update the lifetime payout estimate | `apps/settlement/internal/splits/allocate.go` | fixed | `fix(M18)` |
+| M19 | Historical lifetime payout estimates retain drift and missing split payouts | `apps/settlement/internal/settlement/payout_estimate.go` | open | |
+| M20 | Monthly payout estimate overstates partially allocated split payouts | `apps/settlement/internal/settlement/payout_estimate.go` | open | |
 
 ### Settlement timing and test merchants (T)
 
@@ -156,11 +158,23 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 - Fix: exact integer intermediates preserve half-to-even rounding and split remainders; checked results and totals return errors through batch close, MDR recalculation, and split payout rather than silently overflowing. Unrepresentable calculations roll back.
 - Test: `money/rate_m17_fix_test.go`, `splits/shares_m17_fix_test.go`, and `settlement/discounted_fee_m17_fix_test.go` cover large rates and splits, unrepresentable values, and database rollback. Before fixing, 1,000,000,000,000,000 fils at 10,000 bps returned -844,674,407,370,955; the large split lost a fil. Full Go suite passed.
 
-#### M18 Lifetime payout estimate needs historical reconciliation and split coverage
+#### M18 Split payouts do not update the lifetime payout estimate
 - Where: `apps/settlement/internal/settlement/payout_estimate.go`, `apps/settlement/internal/splits/allocate.go`
-- What's wrong: M5 converted the old float estimate to integer fils without rebuilding drifted historical totals; split payout processing does not update the estimate.
-- What it breaks: the monitoring estimate can remain inaccurate after M5 and continue to omit split payouts.
-- Next: verify the expected estimate against paid batches, including split payouts, and plan any historical correction with Finance.
+- What's wrong: split payout processing marked batches paid without updating the parent merchant's lifetime payout estimate.
+- What it breaks: the monitoring estimate omits split payouts, even after M5 fixed its arithmetic.
+- Fix: increment the estimate by the amount actually allocated to children in the payout transaction; the existing paid-state check prevents replay from adding it twice. · Proper fix: share the update helper between ordinary and split payout paths instead of duplicating its SQL.
+- Test: `splits/payout_estimate_m18_fix_test.go` (full, partial and zero allocation; replay). Before the fix a 10,001-fils split left an estimate of 100 rather than 10,101.
+
+#### M19 Historical lifetime payout estimates need reconciliation
+- Where: `apps/settlement/internal/settlement/payout_estimate.go`
+- What's wrong: M5 converted old float estimates to integer fils without rebuilding drifted historical totals; past split payouts were also omitted before M18.
+- Next: reconcile historical actual payouts with Finance before any correction. Do not blindly sum batch net payouts: a split can allocate less than its batch net.
+
+#### M20 Monthly payout estimate overstates partially allocated splits
+- Where: `apps/settlement/internal/settlement/payout_estimate.go`
+- What's wrong: `EstimateMonthlyPayout` sums the full net amount of paid batches even when only part of a split batch was allocated to children. No production caller was found in the M5 audit.
+- What it breaks: a monitoring estimate can report more than the amount actually paid when split weights total less than 100%.
+- Next: derive the estimate from actual payout amounts and cover ordinary, full and partial split payouts.
 
 #### T4 Invalid settlement polling interval crashes the daemon
 - Where: `apps/settlement/internal/config/config.go`, `apps/settlement/internal/scheduler/daemon.go`
@@ -403,7 +417,7 @@ Keep each entry short. One per bug, under its class heading:
 - What's wrong: the merchant's lifetime net payout figure (ops dashboard) and the 30-day payout estimate drifted from the real totals.
 - Why: the column was `REAL` (0040) and Go added each payout as `float32`; float32 is exact only up to 2^24 fils (16,777.216 BD). `EstimateMonthlyPayout` also summed in `float32`. Comments said "nobody reads it", but ops do (the seed even copied the float rounding with `Math.fround`).
 - What it breaks: past 16,777.216 BD single fils vanish (16,777,216 + 1 + 1 + 1 stayed 16,777,216); 9,987,654,451 fils was stored as 9,987,654,656; the 30-day estimate (no caller yet) would flag payouts against a wrong figure.
-- Fix: migration `0074_lifetime_payout_estimate_bigint.sql` (BIGINT, existing values rounded to whole fils); Go passes and sums `int64`/`money.Fils`; `EstimateMonthlyPayout` returns `money.Fils` (no callers); the seed sums integers. Widened the old test's read-back to `int64`. · Proper fix (if different): also recompute existing totals from paid batches (they keep their old drift); split payouts (`splits/allocate.go`) mark batches paid without bumping the estimate.
+- Fix: migration `0074_lifetime_payout_estimate_bigint.sql` (BIGINT, existing values rounded to whole fils); Go passes and sums `int64`/`money.Fils`; `EstimateMonthlyPayout` returns `money.Fils` (no callers); the seed sums integers. Widened the old test's read-back to `int64`. · Proper fix (if different): historical totals retain old drift and need reconciliation (M19); split payouts now update the estimate (M18).
 - Test: `settlement/payout_estimate_fix_test.go` (+1 fils above 2^24, a 9.98-billion-fil total, the 30-day estimate; all three failed before) · ADR: 0001, 0005 (0074 is allowed)
 
 #### M6 Platform volume counter overflows int32

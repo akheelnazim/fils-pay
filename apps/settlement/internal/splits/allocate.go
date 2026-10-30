@@ -142,6 +142,16 @@ func PayoutSplitBatch(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) 
 		totalAllocated += s.AllocatedFils
 	}
 
+	// Track the amount actually paid to children, in the same transaction as
+	// the split legs and the transition to paid (M18).
+	if _, err := tx.Exec(ctx, `
+		UPDATE merchants
+		   SET lifetime_net_payout_monitoring_estimate = lifetime_net_payout_monitoring_estimate + $2
+		 WHERE id = $1
+	`, parentMerchantID, int64(totalAllocated)); err != nil {
+		return SplitPayoutResult{}, fmt.Errorf("splits: PayoutSplitBatch: update lifetime payout monitoring estimate: %w", err)
+	}
+
 	// Bring the parent's cached balance down by what the legs above actually
 	// debited from its merchant_payable account, same as PayoutBatch does
 	// for a non-split merchant.
