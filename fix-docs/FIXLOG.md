@@ -42,7 +42,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | --- | --- | --- | --- | --- |
 | M1 | CSV import reads BD as cents (10x) | `apps/api/src/admin/adjustmentCsvParsing.ts` | fixed | `fix(M1)` |
 | M2 | Scheme statement always a few fils high | `apps/settlement/internal/settlement/batch.go` | fixed | `fix(M2)` |
-| M3 | Split payouts short every batch | open | |
+| M3 | Split payouts short every batch | `apps/settlement/internal/splits/allocate.go` | fixed | `fix(M3)` |
 | M4 | Net payout computed in float32 | `apps/settlement/internal/settlement/payable.go` | fixed | `fix(M4)` |
 | M5 | Lifetime payout estimate drifts (REAL) | open | |
 | M6 | Platform volume counter overflows int32 | `apps/settlement/internal/settlement/platform_volume.go` | fixed | `fix(M6)` |
@@ -326,6 +326,15 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: the scheme is told up to 9 fils more per line than we book, every day (0.077 BD on Delta Wholesale on 14 Sep); finance can't tie out and blamed Visa.
 - Fix: store `formatFilsAsTwoDecimalString(truncated)` as an exact numeric string, so `amount` = `amount_fils / 1000` (ADR-0002) with no float (ADR-0001); deleted the float helper `SchemeAmountBD`. Rows already exported keep their old values (files already sent).
 - Test: `settlement/batch_fix_test.go` (4750, 4747, 4755, 93276, 9 fils; four were rounded up before, all exact now) · ADR: 0001, 0002
+
+#### M3 Split payouts short every batch
+- Where: `apps/settlement/internal/splits/allocate.go`
+- Clue: "the three child payouts don't add up to the parent's total. It's small, a few tens of fils each batch, but it happens every batch since launch."
+- What's wrong: a marketplace parent's payout split across sub-merchants did not add up to the batch's net payout.
+- Why: each child's share was rounded on its own (`ApplyRateFils`, banker's rounding) and the difference was never paid; the tested helper `ChildShares` only had amounts that divide evenly and was not even used.
+- What it breaks: children short by up to a few fils every batch (10001 fils in thirds paid 10000), the remainder stuck in the parent's payable and cache; in other cases shares rounded up and overpaid (3 fils in halves paid 4).
+- Fix: `ChildShares` uses largest remainders (round every share down, then give the fils still owed one at a time to the largest dropped fractions), so shares are never negative and total exactly the payout their weights cover; `PayoutSplitBatch` uses it. The ledger legs, `settlement_batch_splits` and the cache reduction now equal the net payout. (A first version put the whole difference on the largest share; review showed five 20% shares of 3 fils drove one share to −1, so it was replaced.) · Proper fix (if different): validate that a parent's weights total 10000 when splits are configured; weights over 10000 still overpay, as before.
+- Test: `splits/shares_fix_test.go` (odd thirds/halves, 1 fil, 0, large, weights under 100%, five shares each rounding up) and `splits/allocate_fix_test.go` (database: split rows, ledger debits and cache all match net; exact division unchanged); both failed before · ADR: 0001 (integer fils)
 
 #### M4 Net payout computed in float32
 - Where: `apps/settlement/internal/settlement/payable.go`
