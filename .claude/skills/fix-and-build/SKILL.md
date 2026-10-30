@@ -75,6 +75,10 @@ commands; ask for "OK to commit" / "Problems found" plus file:line bullets. Tell
 
 Branch per fix: `git checkout main && git pull` → `git checkout -b fix/<ID>` (or `feat/FP-300-<F#>`, `docs/<topic>`) → work and commit on the branch → `git checkout main && git pull` again → `git merge --squash fix/<ID>` → **one** commit on main with the full message → push → delete the branch.
 
+Conflicts (a colleague also commits to `main`): resolve keeping both sides' intent, re-run the affected
+tests, and add a `Conflicts:` line to the commit message (files, what each side changed, the resolution)
+plus the same note in the FIXLOG entry. Never force-push.
+
 Stage only this bug's files (code + test + FIXLOG row/entry). Message:
 
 ```
