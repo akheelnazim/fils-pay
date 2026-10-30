@@ -24,10 +24,14 @@ export async function recomputeTransactionStatusesForMerchant(
   merchantId: string,
 ): Promise<RecomputeStatusesResult> {
   const candidates = await client.query<CandidateRow>(
-    `SELECT id, status, amount_fils, captured_fils, refunded_fils
-       FROM transactions
-      WHERE merchant_id = $1 AND status NOT IN ('authorized', 'voided')
-      FOR UPDATE`,
+    // F19: count refunds that succeeded, not refunded_fils (which also holds the
+    // amounts of refunds still in flight, F3), as processRefund does since F17.
+    `SELECT t.id, t.status, t.amount_fils, t.captured_fils,
+            (SELECT COALESCE(SUM(r.amount_fils), 0) FROM refunds r
+              WHERE r.transaction_id = t.id AND r.status = 'succeeded') AS refunded_fils
+       FROM transactions t
+      WHERE t.merchant_id = $1 AND t.status NOT IN ('authorized', 'voided')
+      FOR UPDATE OF t`,
     [merchantId],
   );
 

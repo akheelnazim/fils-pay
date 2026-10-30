@@ -123,6 +123,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F16 | Fee recalculation can push a refunded batch's net payout below zero | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `feat(FP-300/F16)` |
 | F17 | A refund's status, event and webhook count other refunds still in flight | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F17)` |
 | F18 | After the F16 clamp, a later rate decrease pays a fully refunded batch | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `feat(FP-300/F18)` |
+| F19 | Status recompute counts in-flight refunds as refunded | `apps/api/src/admin/transactionStatusRecompute.ts` | fixed | `feat(FP-300/F19)` |
 
 ### Test suite (Q)
 
@@ -732,6 +733,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What it covers: authorize 10 000 fils → capture → `POST /v1/refunds` of 3 000 → a blank-amount refund of the remaining 7 000 → a third refund answers 409. Checks: every ledger entry group balances; `merchant_payable` and `platform_fee_revenue` both net to 0 for the payment; refunds sum to 10 000 and the fee reversed to 250 (the whole fee); the transaction is `refunded` with `refundedFils 10 000`; two `refund.succeeded` outbox rows, delivered to the merchant's endpoint with signatures that verify (`partially_refunded` then `refunded`, totals 3 000 and 10 000); the reconciliation report has gap 0.
 - Payout reduction is the Go side (F8, `settlement/refund_fix_test.go`): a TS test can't run `CloseBatch`.
 - Test result: passes on first complete run against the fixed code · ADR: none
+
+#### F19 Status recompute counts in-flight refunds
+- Where: `apps/api/src/admin/transactionStatusRecompute.ts`
+- What's wrong: 4 000 captured with a refund of 4 000 reserved but not yet confirmed by the acquirer (or later declined): the recompute tool marked the transaction `refunded`. (Found by the Opus overall review; F17 fixed the same thing in `processRefund`.)
+- Why: it derived the status from `transactions.refunded_fils`, which includes reservations of refunds still in flight (F3).
+- What it breaks: running "recompute statuses" during or after a failed refund reports a refund that never happened.
+- Fix: the recompute reads the sum of the transaction's succeeded `refunds` rows instead (row lock now `FOR UPDATE OF t`). `refunded_fils` keeps its job as the reservation counter and as the response's `refundedFils` (F11). · Proper fix (if different): a pending refund row (F3's proper fix).
+- Test: `admin/transactionStatusRecompute.f19.fix.test.ts` (a bare reservation stays `captured`; succeeded refunds still give `refunded` / `partially_refunded`; 2 000 done + 2 000 reserved stays `partially_refunded`). 2 failed before · ADR: none
 
 #### F18 F16's clamp is undone by a later rate decrease
 - Where: `apps/settlement/internal/settlement/recalculate_mdr.go`
