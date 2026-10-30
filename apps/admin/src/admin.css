@@ -226,3 +226,49 @@ button:disabled {
   margin-top: 0.4rem;
   font-weight: 700;
 }
+
+/* Administration portal visual system */
+body { color: #183147; background: #f2f5f8; }
+.admin-header { padding: 1rem 2rem; background: #17344a; border: 0; gap: 1rem 2rem; color: #fff; }
+.admin-brand { font-size: 1.25rem; letter-spacing: -.04em; color: #fff; }
+.admin-nav { flex-wrap: wrap; gap: .25rem; }
+.admin-nav a { color: #d3e3ea; padding: .55rem .7rem; border-radius: .5rem; }
+.admin-nav a:hover, .admin-nav a.active { color: #fff; background: #34576a; text-decoration: none; }
+.admin-main { max-width: 76rem; padding: 2.5rem 2rem; }
+.admin-main h1, .admin-centered h1 { letter-spacing: -.04em; color: #122d3c; }
+.admin-centered { box-sizing: border-box; margin: 7vh auto; padding: 2.5rem; background: #fff; border: 1px solid #dce5eb; border-radius: 1rem; box-shadow: 0 18px 55px #16334a18; }
+.admin-form { gap: 1rem; }
+.admin-form label { gap: .45rem; font-weight: 600; }
+.admin-form input, .admin-form select, .admin-form textarea { box-sizing: border-box; padding: .75rem; border: 1px solid #bccbd4; border-radius: .5rem; background: #fff; }
+.admin-form input:focus-visible, .admin-form select:focus-visible, button:focus-visible, .admin-nav a:focus-visible { outline: 3px solid #70b5c4; outline-offset: 2px; }
+button { padding: .65rem 1rem; border-color: #176678; border-radius: .5rem; background: #176678; color: #fff; font-weight: 600; }
+button:hover:not(:disabled) { filter: brightness(.9); }
+.admin-filters { padding: 1rem; border-color: #dce5eb; border-radius: .75rem; background: #fff; }
+.admin-table { border-collapse: separate; border-spacing: 0; border: 1px solid #dce5eb; border-radius: .75rem; overflow: hidden; }
+.admin-table th, .admin-table td { padding: .85rem; border: 0; border-bottom: 1px solid #e6edf0; }
+.admin-table th { background: #f3f7f9; color: #486272; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.admin-role-chip { border-radius: 999px; }
+.admin-error, .admin-notice, .admin-confirm { border-radius: .6rem; }
+@media (max-width: 700px) { .admin-header { padding: 1rem; } .admin-nav { width: 100%; } .admin-identity { margin-left: 0; flex-wrap: wrap; } .admin-main { padding: 1.5rem 1rem; overflow-x: auto; } .admin-centered { margin: 1rem; padding: 1.5rem; } .admin-form-inline { flex-wrap: wrap; } .admin-dl { grid-template-columns: 1fr; } .impersonation-banner { flex-wrap: wrap; } }
+
+/* Typography and reading rhythm for administration screens. */
+body { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; line-height: 1.55; }
+.admin-main h1, .admin-centered h1 { font-size: clamp(1.75rem, 2.4vw, 2.25rem); line-height: 1.2; margin: 0 0 .65rem; }
+.admin-main h2, .admin-centered h2 { font-size: 1.3rem; line-height: 1.3; margin: 2rem 0 .65rem; }
+.admin-main p, .admin-centered p { line-height: 1.55; }
+.admin-main a { color: #176678; text-underline-offset: .18em; }
+.admin-main .admin-form label, .admin-centered .admin-form label { font-size: .9rem; letter-spacing: .01em; }
+.admin-table td { line-height: 1.5; }
+.admin-identity { font-size: .88rem; }
+
+/* Preserve readable columns in dense operational tables on small screens. */
+.admin-form-inline input[type="search"], .admin-form-inline input[type="text"] { min-width: min(100%, 18rem); }
+.admin-table tbody tr:hover { background: #f7fafb; }
+.admin-table tbody tr:last-child td { border-bottom: 0; }
+.admin-nav a, button { transition: background-color .15s ease, color .15s ease; }
+@media (max-width: 700px) {
+  .admin-main { overflow-x: visible; }
+  .admin-table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .admin-table th, .admin-table td { min-width: 6rem; }
+  .admin-identity span { overflow-wrap: anywhere; }
+}
