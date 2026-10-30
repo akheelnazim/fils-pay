@@ -81,6 +81,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X11 | Merchant UI root URL renders React Router's unexpected application 404 | `apps/web/src/router.tsx` | fixed | `fix(X11)` |
 | X12 | Merchant analytics accepts impossible dates and can return a database error | `apps/api/src/routes/analytics.ts` | fixed | `fix(X12)` |
 | X13 | A request body that isn't valid JSON gets 500 `internal_error` instead of 400 (every route) | `apps/api/src/plugins/errorHandler.ts` | open | |
+| X14 | March sweep production postings need Finance reconciliation | `production ledger / scripts/reconcile_march.ts` | open | |
 
 ### Deploy and setup (D)
 
@@ -500,7 +501,7 @@ Keep each entry short. One per bug, under its class heading:
 - Clue: "someone ran it twice on staging and the gap doubled. Nobody knows if it ran more than once on production. The log file only has one timestamp."
 - What's wrong: every run of the March 2026 residue sweep posted the whole residue again.
 - Why: each run posted with a fresh `randomUUID()` group and nothing checked for an earlier run (the `am:` comment "entry_group_id dedupes it" and RUNBOOK's "checks for an existing posting… a second run is a no-op" were both false). There was no dry-run flag, so FH's 3 July "dry run" (13 lines, 70 fils "identical") posted a second time. The log has one timestamp because `>` overwrites it.
-- What it breaks: each extra run takes the March residue (70 fils across 13 lines in production) out of merchant payables again, doubling finance's gap; production has likely been posted at least twice.
+- What it breaks: each extra run takes the March residue (70 fils across 13 lines) out of merchant payables again, doubling finance's gap. Staging was run twice; production's run count is unverified and is tracked as X14.
 - Fix: the sweep is `runSweep(client, { dryRun })` inside the caller's transaction. `--dry-run` computes and reports, writes nothing. A real run takes an advisory lock on the sweep's description, then refuses ("REFUSED", exit 1) if any ledger entry with that description exists. Window left on the UTC month (ADR-0003); the posting direction is X5. RUNBOOK's claim is now true; its copy-for-next-month step now also says to rename `SWEEP_DESCRIPTION` and dry-run first. The test hides any committed sweep rows inside its own transaction, so it also runs on a DB where March was posted. · Proper fix (if different): a unique key on the sweep (e.g. a `ledger_postings` row per sweep + month) instead of a description match, and month-end residue automated (RUNBOOK). Production clean-up: count `ledger_entries WHERE description LIKE 'March 2026 scheme rounding residue%'` (2 legs per merchant per run) and reverse the extra runs with finance; not done here (never run scripts against data).
 - Test: `scripts/reconcile_march.fix.test.ts` (first run posts once, second run posts nothing, `--dry-run` writes nothing, dry run after a real run writes nothing, round merchant untouched; rolled back; three failed before: second run and dry runs posted) · ADR: 0003 (window unchanged)
 
@@ -524,9 +525,18 @@ Keep each entry short. One per bug, under its class heading:
 - Where: `scripts/reconcile_march.ts`
 - What's wrong: the March residue sweep debited `merchant_payable` and credited `scheme_rounding_residue`, so merchants paid for the scheme's 2-decimal truncation.
 - Why: the legs were the reverse of ADR-0002, which books residue as credit `card_scheme_clearing` / debit `scheme_rounding_residue` and never touches the merchant.
-- What it breaks: each merchant's March payable was cut by its residue (70 fils across 13 lines in production, twice per X2), and the residue account moved the wrong way, so finance's monthly clearing against the scheme statement can't tie out.
+- What it breaks: each run cut merchant payables by the residue (70 fils across 13 lines) and moved the residue account the wrong way. Whether production has duplicate postings is unverified; see X14.
 - Fix: the sweep posts credit `card_scheme_clearing` / debit `scheme_rounding_residue` (same amounts, still one group per merchant). X2's test helper now reads the residue debit instead of the merchant debit. · Proper fix (if different): with finance, reverse the production postings already made (each run's merchant_payable debit and residue credit) and post the ADR-0002 legs once; not done here (never run scripts against data). Residue for April onward is M14.
 - Test: `scripts/reconcile_march.x5.fix.test.ts` (no merchant_payable leg; legs are clearing credit / residue debit of 9 fils; both failed before; rolled back) · ADR: 0002
+
+#### X14 March sweep production postings need Finance reconciliation
+- Where: production `ledger_entries`; `scripts/reconcile_march.ts`
+- Clue: "Nobody knows if it ran more than once on production. The log file only has one timestamp."
+- What's wrong: the number and direction of March sweep postings in production have not been established; the old log overwrote prior output, so one timestamp is not proof of one run.
+- Why: the old script had no idempotency guard and staging was run twice. The current X2 guard prevents another posting with the same description, but does not identify or reverse historical duplicates or wrong-direction legs.
+- What it breaks: duplicate or incorrectly directed entries can leave March merchant payables and scheme rounding residue misstated.
+- Fix: read-only reconcile March sweep ledger entries by exact description, merchant, entry group, account, and direction; compare the totals with the March source residue (70 fils across 13 lines); ask Finance to determine whether any entries require reversal/correction. Do not rerun the sweep until this review is complete. `--dry-run` reports the calculated residue but does not check prior postings. No production data was accessed or changed. · Proper fix (if different): Finance-approved, auditable corrections for confirmed duplicate or wrong-direction postings.
+- Test: not applicable (production ledger review; no data touched) · ADR: 0002 · Commit: `docs(X14)`
 
 #### X6 Reporting stops for good on one malformed event
 - Where: `apps/reporting/src/consumer/runConsumerPass.ts`
