@@ -50,7 +50,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M8 | MDR recalculation rewrites paid batches | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `fix(M8)` |
 | M9 | Recalculate balances button 135K → 7K (FP-203) | `apps/settlement/internal/ledger/refresh.go` | fixed | `fix(M9)` |
 | M10 | Settlement summary double-counts multi-capture | `apps/api/src/settlement/query.ts` | fixed | `fix(M10)` |
-| M11 | Reconciliation pending uses `merchants.mdr_bps` | open | |
+| M11 | Reconciliation pending uses `merchants.mdr_bps` | `apps/api/src/settlement/query.ts` | fixed | `fix(M11)` |
 | M12 | `parsePromotionalDiscountFils` uses float × 100 | `apps/api/src/payments/discountAdjustment.ts` | fixed | `fix(M12)` |
 | M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | `apps/api/src/fees/estimate.ts` | fixed | `fix(M13)` |
 | M14 | Scheme residue never journaled (ADR-0002) | open | |
@@ -395,6 +395,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: a 5.000 BD transaction captured as 3.000 + 2.000 showed 10.000 BD; merchants and finance see a summary that disagrees with their payouts (the "timing difference" was double counting).
 - Fix: sum `te.amount_fils`, the amount of each capture event in the window. · Proper fix (if different): same.
 - Test: `settlement/summary.fix.test.ts` (two-part capture 5000 not 10000, only the in-window part, mixed single and three-part, empty; three failed before) · ADR: none
+
+#### M11 Reconciliation pending figure uses the merchant's base rate
+- Where: `apps/api/src/settlement/query.ts`
+- What's wrong: the reconciliation report's "pending, not yet batched" net took each capture's fee from `merchants.mdr_bps`.
+- Why: a comment said a "0046 trigger" keeps `mdr_bps` in sync with `fee_schedules`; 0046 is splits and no such trigger exists. Capture charges the effective-dated schedule rate minus the volume-tier bonus, so the two differ for any merchant with a schedule or in the tier, though the function's own docstring promises the capture rate.
+- What it breaks: a 10.000 BD capture charged at a scheduled 200 bps showed 9.750 BD pending instead of 9.800 (or 9.765 in the tier), so the report showed an unexplained gap for exactly the merchants finance re-priced.
+- Fix: use the fee each capture event recorded (`metadata.feeFils`, written by capture with the rate, schedule and tier of that moment) minus the discount adjustment; for events without it, the schedule in force at the event's time, else `mdr_bps`. Removed the false comment. · Proper fix (if different): store the fee as a column on `transaction_events` instead of reading JSON metadata.
+- Test: `settlement/reconciliationPending.fix.test.ts` (recorded scheduled fee, recorded tier fee, schedule at event time ignoring a future one, no schedule → `mdr_bps`, discount off a recorded fee; three failed before) · ADR: none
 
 #### M12 Unused promotional-discount parser reads BD as cents
 - Where: `apps/api/src/payments/discountAdjustment.ts`
