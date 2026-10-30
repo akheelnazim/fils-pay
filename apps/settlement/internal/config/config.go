@@ -93,6 +93,9 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	if pollIntervalSeconds <= 0 || int64(pollIntervalSeconds) > (1<<63-1)/int64(time.Second) {
+		return Config{}, fmt.Errorf("config: SETTLEMENT_DAEMON_POLL_INTERVAL_SECONDS must be a positive duration representable in seconds")
+	}
 
 	internalPort, err := parseIntEnv("SETTLEMENT_INTERNAL_PORT", 8091)
 	if err != nil {

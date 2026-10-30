@@ -67,7 +67,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | T1 | Daily close runs 03:00 Bahrain, not midnight | `apps/settlement/internal/scheduler/daemon.go` | fixed | `fix(T1)` |
 | T2 | Admin tool flips test merchants into settlement | `apps/api/src/routes/adminMerchantsRecompute.ts` | fixed | `fix(T2)` |
 | T3 | Recompute statuses reports `openAuthorizations` as always 0 (its query excludes `authorized` rows) | `apps/api/src/admin/transactionStatusRecompute.ts` | fixed | `fix(T3)` |
-| T4 | Nonpositive settlement polling interval crashes the daemon | `apps/settlement/internal/config/config.go` | open | |
+| T4 | Invalid settlement polling interval crashes the daemon | `apps/settlement/internal/config/config.go` | fixed | `fix(T4)` |
 
 ### Scripts and other (X)
 
@@ -155,9 +155,10 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 #### T4 Invalid settlement polling interval crashes the daemon
 - Where: `apps/settlement/internal/config/config.go`, `apps/settlement/internal/scheduler/daemon.go`
-- What's wrong: zero and negative polling intervals pass config parsing but `time.NewTicker` panics for them.
+- What's wrong: zero, negative and excessively large polling intervals pass config parsing but `time.NewTicker` panics after duration conversion.
 - What it breaks: the settlement daemon cannot start with those settings; daily close stops until configuration is corrected.
-- Next: reject invalid intervals at configuration load and test zero, negative, and valid values.
+- Fix: reject intervals outside the positive whole-second range representable by `time.Duration`. Config loading also applies this check to one-shot commands.
+- Test: `config/poll_interval_fix_test.go` covers zero, negative, overflow boundary and valid values; zero and negative failed before with `poll interval 0 must be rejected` / `poll interval -1 must be rejected`.
 
 ## Audit check (2026-10-29)
 
