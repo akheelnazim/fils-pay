@@ -95,7 +95,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
 | FP-300 | Refunds (F1–F13) | open | |
-| F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | open | |
+| F14 | Every refund crashes on insert: `reason` NULL vs 0070 CHECK | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F14)` |
 
 ### Test suite (Q)
 
@@ -608,6 +608,16 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `plugins/cors.fix.test.ts` (dashboard and console origins allowed with credentials, preflight 204 with methods/headers, other origins get nothing, `CORS_ORIGINS` replaces defaults, production empty by default; five failed before) · ADR: none
 
 ### FP-300 refunds (feature, last) (F)
+
+Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
+
+#### F14 Every refund crashes on insert
+- Where: `apps/api/src/payments/processRefund.ts`
+- What's wrong: every refund without a reason failed with `violates check constraint "chk_refunds_reason_not_null"`.
+- Why: the insert passed `reason` as an explicit `NULL`; 0070's column `DEFAULT 'unspecified'` only applies when the column is left out, and its CHECK rejects NULL.
+- What it breaks: no refund could ever be recorded (the 11 baseline refund test failures).
+- Fix: insert `input.reason ?? "unspecified"`. The idempotency request hash still uses the reason as given. · Proper fix (if different): same.
+- Test: `payments/processRefund.f14.fix.test.ts` (no reason stores `unspecified`, failed before with the CHECK error; a given reason is kept). Shared setup for the FP-300 tests lives in `payments/refundTestSupport.ts`. The 11 refund baseline failures pass now · ADR: none
 
 ### Test suite (Q)
 
