@@ -34,7 +34,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | R1 | Payment link charged twice (2026-05-14) | `apps/api/src/paymentLinks/pay.ts` | fixed | `fix(R1)` |
 | R2 | Duplicate acquirer callback notes (FP-201) | `apps/api/src/acquirer/callbacks.ts` | on hold (fix proposed) | |
 | R3 | Duplicate payout notifications (2026-08-21) | `apps/settlement/internal/settlement/payout_notify.go` | on hold (fix proposed) | |
-| R5 | Adjustment CSV importable twice | open | |
+| R5 | Adjustment CSV importable twice | `apps/api/src/admin/adjustmentImport.ts` | fixed | `fix(R5)` |
 
 ### Money correctness (M)
 
@@ -306,6 +306,14 @@ Keep each entry short. One per bug, under its class heading:
   4. undo SQL in the header (re-insert deliveries after events, drop the index).
   Code: `INSERT … ON CONFLICT (aggregate_id) WHERE event_type = 'settlement.paid' DO NOTHING`, and only `count++` when a row was inserted (`RowsAffected() == 1`).
 - Test to write: Go `payout_notify_fix_test.go`: two concurrent `EnqueuePayoutNotifications` over one paid batch → exactly one event, combined count = 1; a second sequential run enqueues 0.
+
+#### R5 Adjustment CSV can be imported twice
+- Where: `apps/api/src/admin/adjustmentImport.ts`
+- What's wrong: finance could apply the same balance-adjustment CSV twice, and every row was posted again.
+- Why: nothing identified an import. There is no unique filename (the `am:` comment claiming one is false) and no content check; the route's own comment admitted "uploading the same csv twice posts it twice".
+- What it breaks: a double click or a re-upload doubles every adjustment in the ledger and the cached balances (e.g. +4.750 / −1.250 BD applied twice).
+- Fix: migration `0075_adjustment_import_content_hash.sql` adds `content_hash` with a unique index; the import hashes its parsed rows (merchant, amount in fils, reason, in order, as JSON) and answers 409 `duplicate_import` on a repeat, whatever the filename. Earlier imports keep NULL. Removed the two false comments. · Proper fix (if different): a preview / dry-run step and an explicit "apply again" override for a file that is meant to repeat (identical content is now always refused).
+- Test: `admin/adjustmentImport.fix.test.ts` (same rows refused and nothing posted, renamed file refused, different amount/reason/order allowed, a reason with separators can't collide; two failed before) · ADR: 0005 (0075 is allowed)
 
 ### Money correctness (M)
 
