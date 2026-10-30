@@ -33,7 +33,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | --- | --- | --- | --- | --- |
 | R1 | Payment link charged twice (2026-05-14) | `apps/api/src/paymentLinks/pay.ts` | fixed | `fix(R1)` |
 | R2 | Duplicate acquirer callback notes (FP-201) | `apps/api/src/acquirer/callbacks.ts` | on hold (fix proposed) | |
-| R3 | Duplicate payout notifications (2026-08-21) | `apps/settlement/internal/settlement/payout_notify.go` | on hold (fix proposed) | |
+| R3 | Duplicate payout notifications (2026-08-21) | `apps/settlement/internal/settlement/payout_notify.go` | fixed | `fix(R3)` |
 | R5 | Adjustment CSV importable twice | `apps/api/src/admin/adjustmentImport.ts` | fixed | `fix(R5)` |
 
 ### Money correctness (M)
@@ -299,17 +299,12 @@ Keep each entry short. One per bug, under its class heading:
   Code: `INSERT … ON CONFLICT (callback_id) DO NOTHING` (redelivery returns normally, no throw).
 - Test (written, parked): `fix-docs/pending/R2/callbacks.fix.test.ts` → move to `apps/api/src/acquirer/`. Fails today 2 ≠ 1 (redelivery) and 5 ≠ 1 (concurrent); distinct callbacks still give 2.
 
-#### R3 Duplicate settlement.paid notifications (2026-08-21) — on hold, fix proposed
+#### R3 Duplicate settlement.paid notifications (2026-08-21)
 - Where: `apps/settlement/internal/settlement/payout_notify.go`
 - What's wrong: when the daemon and the CLI run together, both pass the `NOT EXISTS` check and each inserts a `settlement.paid` outbox event, so the merchant gets two payout webhooks and the dispatcher writes a second disbursement record.
 - Why: check-then-insert with no unique index on `outbox_events`; the FP-208 advisory lock listed as "Done" does not exist.
-- Proposed fix (archive duplicates, reversible): next free migration after R2's:
-  1. side tables `outbox_events_duplicates` and `webhook_deliveries_duplicates` (`LIKE … INCLUDING DEFAULTS` + `archived_at`);
-  2. for `event_type = 'settlement.paid'`, keep the earliest event per `aggregate_id`; move the later events' `webhook_deliveries` rows first (FK from 0022), then the events (also check `webhook_delivery_archives` from 0068 and disbursement rows from 0057 for references, and archive the same way);
-  3. `CREATE UNIQUE INDEX outbox_events_settlement_paid_once ON outbox_events (aggregate_id) WHERE event_type = 'settlement.paid'`;
-  4. undo SQL in the header (re-insert deliveries after events, drop the index).
-  Code: `INSERT … ON CONFLICT (aggregate_id) WHERE event_type = 'settlement.paid' DO NOTHING`, and only `count++` when a row was inserted (`RowsAffected() == 1`).
-- Test to write: Go `payout_notify_fix_test.go`: two concurrent `EnqueuePayoutNotifications` over one paid batch → exactly one event, combined count = 1; a second sequential run enqueues 0.
+- Fix: migration `0078_settlement_paid_event_idempotency.sql` archives later duplicate events and their referencing deliveries, and archives any extra disbursement rows per batch, before creating a partial unique index on `outbox_events(aggregate_id)` for `settlement.paid`. The enqueue uses `ON CONFLICT ... DO NOTHING` and counts only inserted rows. The local database had 44 duplicate event groups and no duplicate disbursement batches; removed rows are retained in reversible archives. · Proper fix: this is the database backstop plus atomic insert; the earlier `NOT EXISTS` remains a scan optimization.
+- Test: `apps/settlement/internal/settlement/payout_notify_fix_test.go` starts concurrent scans and checks one event per batch, returned count matches inserted rows, and a sequential rerun adds zero. Failed before (stress run observed two events per batch); passes after, including 20 repetitions.
 
 #### R5 Adjustment CSV can be imported twice
 - Where: `apps/api/src/admin/adjustmentImport.ts`
