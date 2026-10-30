@@ -196,3 +196,58 @@ func TestF16_RecalculateMDRNeverMakesTheNetNegative(t *testing.T) {
 		t.Errorf("payable cache moved %d -> %d, but the batch net didn't change", cachedBefore, cachedAfter)
 	}
 }
+
+// F18 (Opus overall review): after F16 clamped the net at 0, a later rate
+// decrease moved the unclamped fee back and handed the merchant money on a
+// batch that was fully refunded.
+func TestF18_RateUpThenDownOnAFullyRefundedBatchPaysNothing(t *testing.T) {
+	pool := mustPool(t)
+	ctx := context.Background()
+	merchantID := insertActiveMerchant(t, pool, 250)
+	day := time.Date(2026, 5, 15, 0, 0, 0, 0, time.UTC)
+	start, _ := BusinessDayWindow(day)
+	txnID, _ := insertCaptureEvent(t, pool, merchantID, 250, 10_000, start.Add(time.Hour))
+	insertRefund(t, merchantID, txnID, 10_000, 250, start.Add(2*time.Hour))
+	res, err := CloseBatch(ctx, pool, merchantID, day)
+	if err != nil || res.NetPayoutFils != 0 {
+		t.Fatalf("CloseBatch = %+v, %v; want net 0", res, err)
+	}
+	var cachedBefore int64
+	if err := pool.QueryRow(ctx, `SELECT cached_payable_fils FROM merchant_balances WHERE merchant_id = $1`, merchantID).Scan(&cachedBefore); err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+
+	from, to := recalcWindow(day)
+	for _, bps := range []int64{300, 250} {
+		if _, err := pool.Exec(ctx, `UPDATE merchants SET mdr_bps = $2 WHERE id = $1`, merchantID, bps); err != nil {
+			t.Fatalf("update mdr_bps: %v", err)
+		}
+		if _, err := RecalculateMDR(ctx, pool, merchantID, from, to); err != nil {
+			t.Fatalf("RecalculateMDR at %d bps: %v", bps, err)
+		}
+	}
+
+	var net, cachedAfter, adjustments int64
+	if err := pool.QueryRow(ctx, `SELECT net_payout_fils FROM settlement_batches WHERE id = $1`, res.BatchID).Scan(&net); err != nil {
+		t.Fatalf("read net: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT cached_payable_fils FROM merchant_balances WHERE merchant_id = $1`, merchantID).Scan(&cachedAfter); err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_fils ELSE -amount_fils END), 0)
+		  FROM ledger_entries
+		 WHERE settlement_batch_id = $1 AND account_id = 'merchant_payable' AND description = 'MDR recalculation adjustment'
+	`, res.BatchID).Scan(&adjustments); err != nil {
+		t.Fatalf("read adjustments: %v", err)
+	}
+	if net != 0 {
+		t.Errorf("net after up and down = %d, want 0", net)
+	}
+	if cachedAfter != cachedBefore {
+		t.Errorf("payable cache moved %d -> %d", cachedBefore, cachedAfter)
+	}
+	if adjustments != 0 {
+		t.Errorf("merchant_payable adjustments net %d, want 0: the ledger must agree with the batch", adjustments)
+	}
+}

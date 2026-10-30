@@ -122,6 +122,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | F12 | A full refund of a partial capture stayed `partially_captured` | `apps/api/src/payments/refundState.ts` | fixed | `feat(FP-300/F12)` |
 | F16 | Fee recalculation can push a refunded batch's net payout below zero | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `feat(FP-300/F16)` |
 | F17 | A refund's status, event and webhook count other refunds still in flight | `apps/api/src/payments/processRefund.ts` | fixed | `feat(FP-300/F17)` |
+| F18 | After the F16 clamp, a later rate decrease pays a fully refunded batch | `apps/settlement/internal/settlement/recalculate_mdr.go` | fixed | `feat(FP-300/F18)` |
 
 ### Test suite (Q)
 
@@ -732,6 +733,14 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - Payout reduction is the Go side (F8, `settlement/refund_fix_test.go`): a TS test can't run `CloseBatch`.
 - Test result: passes on first complete run against the fixed code · ADR: none
 
+#### F18 F16's clamp is undone by a later rate decrease
+- Where: `apps/settlement/internal/settlement/recalculate_mdr.go`
+- What's wrong: batch fully refunded (net 0). Raise the rate 250 → 300 bps and recalculate: F16 floors the net at 0 but stored the full new fee (300). Lower it back to 250: the difference (−50) was added to the net, so a fully refunded batch paid out 50 fils and the cache rose by 50. (Found by the second Opus review.)
+- Why: F16 clamped only the net; the stored `fee_fils` and the ledger adjustment still moved by the full, unclamped difference.
+- What it breaks: money paid on a batch that was entirely refunded, and a ledger that only agreed because the +50 and −50 adjustments cancelled.
+- Fix: for an unpaid batch the fee difference itself is capped at the net that is left. That capped amount is what the ledger adjustment, the stored fee (`old fee + capped amount`), the net and the cache all move by, so a later decrease returns only what was taken. This removes the ledger-vs-batch mismatch F16 listed as a known limit. Paid batches are unchanged (M8). Known limit: the cap covers increases only; a plain rate cut on a fully refunded unpaid batch (net 0, fee 250 → 200) still adds 50 to the net, because the fee is not recomputed net of refunds. · Proper fix (if different): recompute the fee on captures net of refunds using each refund's fee reversal.
+- Test: `settlement/refund_fix_test.go` `TestF18_…` (rate 250 → 300 → 250 on a fully refunded batch: net stays 0, cache unchanged, the batch's `merchant_payable` adjustments net 0). Failed before: `net after up and down = 50` · ADR: none
+
 #### F17 Refund status and webhook run ahead of in-flight refunds
 - Where: `apps/api/src/payments/processRefund.ts`
 - What's wrong: 4 000 captured, two refunds of 2 000 at once; the first to finish reported status `refunded`, event `refunded`, total 4 000. If the second was then declined, the status fell back but the merchant had already been sent a false `refunded` webhook. (Found in the Opus review; F3 had recorded it as a known limit.)
@@ -745,7 +754,7 @@ Plan: `docs/superpowers/plans/2026-10-30-fp-300-refunds.md`.
 - What's wrong: capture 10 000 at 250 bps (net 9 750), refund all of it the same day (batch net 0), raise the rate to 300 bps and recalculate: the stored net became −50 and the payable cache moved by −50. (Found in the Opus review of the refund work; I had noted a milder form of it as an "extreme edge" under F8.)
 - Why: after F8 the stored net is no longer `gross − fee`; `recomputeBatchFee` charges every capture at the new rate and ignores refunds (whose fee reversal stays at the old rate), and the net was moved by the fee difference with only an overflow check.
 - What it breaks: a negative `net_payout_fils` that nothing prevents, and a payable cache that no longer matches the batch.
-- Fix: for unpaid batches the new net is floored at 0 and the cache moves by the real change in net (`new − old`, which equals `−diff` whenever nothing was clamped). Known limit: the MDR adjustment ledger entry is still posted for the full difference (50 fils here), so the merchant's `merchant_payable` ledger is 50 below what the batch pays; reconciliation shows it. · Proper fix (if different): recompute the fee on captures net of refunds, using each refund's fee reversal, so a full refund leaves nothing to re-rate.
+- Fix: for unpaid batches the new net is floored at 0 and the cache moves by the real change in net (`new − old`, which equals `−diff` whenever nothing was clamped). The ledger adjustment mismatch noted here is removed by F18. · Proper fix (if different): recompute the fee on captures net of refunds, using each refund's fee reversal, so a full refund leaves nothing to re-rate.
 - Test: `settlement/refund_fix_test.go` `TestF16_…` (full refund, rate 250 → 300, recalculate: net stays 0 and the cache doesn't move). Failed before: `net after recalculation = -50` · ADR: none
 
 #### F12 Full refund of a partial capture never says refunded
