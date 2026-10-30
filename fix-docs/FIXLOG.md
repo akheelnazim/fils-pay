@@ -71,7 +71,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X1 | `expire_holds.ts` can delete every hold | `scripts/expire_holds.ts` | fixed | `fix(X1)` |
 | X2 | March sweep script not idempotent | `scripts/reconcile_march.ts` | fixed | `fix(X2)` |
 | X3 | Large export can OOM the API | `apps/api/src/routes/transactions.ts` | fixed | `fix(X3)` |
-| X4 | Credit threshold can be split around | open | |
+| X4 | Credit threshold can be split around | `apps/api/src/admin/creditThreshold.ts` | fixed | `fix(X4)` |
 | X5 | March sweep debits merchants, not scheme clearing (ADR-0002) | `scripts/reconcile_march.ts` | fixed | `fix(X5)` |
 | X6 | Reporting consumer stops on one malformed event (whole batch fails, pipeline stuck) | open | |
 | X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `fix(X8)` |
@@ -482,6 +482,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: a large merchant's full export can exhaust the 512 MB API and take it down for every merchant.
 - Fix: `streamTransactionsExportCsv` is an async generator paging 1000 rows by `(occurred_at, id)` with the timestamp as exact text; the route sends it with `Readable.from` (backpressure, one page in memory). The body is the same as before (rows sharing an instant now come in id order). CHANGELOG 1.8.0's streaming claim is now true. A database error mid-export now ends a 200 response early (headers already sent). `buildTransactionsExportCsv` is left for its tests but no longer used by the route. · Proper fix (if different): also require and cap the date range (the audit's other option), which changes the API for callers that omit `from`/`to`.
 - Test: `transactions/exportCsv.fix.test.ts` (1002 rows at one instant, sub-millisecond rows at a boundary, same rows as the in-memory export, empty export, the route streams with no content-length; the route test failed before with content-length 108600) · ADR: none
+
+#### X4 Credit approval threshold can be split around
+- Where: `apps/api/src/admin/creditThreshold.ts`
+- What's wrong: manual credits above 50.000 BD need a second approver (ARCHITECTURE "maker-checker"), but one operator could credit more alone.
+- Why: the check compared only the base amount, not base + the MDR reversal the merchant also receives (the FH/MK comment disagreed; the audit sides with FH), and judged each request alone, so 2 × 30.000 BD to one merchant posted with no second approver.
+- What it breaks: the four-eyes control on money leaving the platform: 49.000 BD + 1.225 BD reversal (50.225 BD) or any number of smaller credits posted with one operator.
+- Fix: compare base + reversal plus the merchant's other credits posted without a second approver in the last 24 hours (not rejected); the merchant row is locked `FOR NO KEY UPDATE` so two concurrent requests are judged in turn (review: `FOR UPDATE` would block FK inserts on the merchant and could deadlock with a balance adjustment). Credits that already had a second approval don't count. · Proper fix (if different): agree the window with finance (rolling 24h chosen here) and decide whether pending requests should count too.
+- Test: `admin/credits.x4.fix.test.ts` (base + reversal over the limit, exactly 50.000 BD still one operator, a 30 + 30 split by one or two operators, other merchants, approved credits and >24h-old credits not counted, two concurrent 30.000 BD requests → one posts; four failed before) · ADR: none
 
 #### X5 March sweep charges merchants the scheme residue
 - Where: `scripts/reconcile_march.ts`

@@ -209,8 +209,12 @@ export async function createCreditRequest(
   const draft = parseCreditRequestInput(input.body);
 
   return withTransaction(pool, async (client) => {
+    // FOR NO KEY UPDATE: two credits to one merchant are judged one after the other,
+    // so concurrent requests can't both slip under the limit (X4). Not FOR UPDATE:
+    // that would block every FK insert on this merchant (ledger_entries, ...)
+    // and could deadlock with a balance adjustment.
     const merchantResult = await client.query<{ mdr_bps: number }>(
-      `SELECT mdr_bps FROM merchants WHERE id = $1`,
+      `SELECT mdr_bps FROM merchants WHERE id = $1 FOR NO KEY UPDATE`,
       [input.merchantId],
     );
     const merchant = merchantResult.rows[0];
@@ -223,12 +227,17 @@ export async function createCreditRequest(
     const feeReversalFils = draft.reverseFee
       ? calculateCreditFeeReversal(draft.baseAmountFils, merchant.mdr_bps)
       : ZERO_FILS;
-    // FH: threshold compares base + reversal, so a 50.000 BD credit with a fee reversal needs a second approver
-    // MK: no — base only. fee reversal is mechanical. intended.
-    const requiresApproval = creditRequiresSecondApprover({
-      baseAmountFils: draft.baseAmountFils,
-      feeReversalFils,
-    });
+    const recent = await client.query<{ total: string }>(
+      `SELECT COALESCE(SUM(base_amount_fils + fee_reversal_fils), 0)::text AS total
+         FROM credit_requests
+        WHERE merchant_id = $1 AND requires_approval = false AND status <> 'rejected'
+          AND created_at > now() - interval '24 hours'`,
+      [input.merchantId],
+    );
+    const requiresApproval = creditRequiresSecondApprover(
+      { baseAmountFils: draft.baseAmountFils, feeReversalFils },
+      toFils(Number(recent.rows[0]!.total)),
+    );
 
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO credit_requests
