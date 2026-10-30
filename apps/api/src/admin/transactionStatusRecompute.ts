@@ -32,7 +32,6 @@ export async function recomputeTransactionStatusesForMerchant(
   );
 
   let updated = 0;
-  let openAuthorizations = 0;
 
   for (const row of candidates.rows) {
     const next = nextStatusAfterRefund({
@@ -44,8 +43,14 @@ export async function recomputeTransactionStatusesForMerchant(
       await client.query(`UPDATE transactions SET status = $2 WHERE id = $1`, [row.id, next]);
       updated += 1;
     }
-    if (row.status === "authorized") openAuthorizations += 1;
   }
+
+  // T3: the scan above skips 'authorized' rows, so count them on their own.
+  const open = await client.query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM transactions WHERE merchant_id = $1 AND status = 'authorized'`,
+    [merchantId],
+  );
+  const openAuthorizations = Number(open.rows[0]!.count);
 
   return { merchantId, scanned: candidates.rows.length, updated, openAuthorizations };
 }

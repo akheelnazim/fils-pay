@@ -62,7 +62,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | --- | --- | --- | --- | --- |
 | T1 | Daily close runs 03:00 Bahrain, not midnight | `apps/settlement/internal/scheduler/daemon.go` | fixed | `fix(T1)` |
 | T2 | Admin tool flips test merchants into settlement | `apps/api/src/routes/adminMerchantsRecompute.ts` | fixed | `fix(T2)` |
-| T3 | Recompute statuses reports `openAuthorizations` as always 0 (its query excludes `authorized` rows) | `apps/api/src/admin/transactionStatusRecompute.ts` | open | |
+| T3 | Recompute statuses reports `openAuthorizations` as always 0 (its query excludes `authorized` rows) | `apps/api/src/admin/transactionStatusRecompute.ts` | fixed | `fix(T3)` |
 
 ### Scripts and other (X)
 
@@ -398,6 +398,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: Go settlement (`CloseBatch` filters `test_mode = false`) then batches the sandbox merchant's test captures and pays them out as real money.
 - Fix: drop the call; the route still returns and audits `flagsUpdated: []` so the API and admin type keep their shape; deleted `admin/merchantFlags.ts` (its only caller). · Proper fix (if different): also remove `flagsUpdated` from the response, the audit metadata and `apps/admin/src/types.ts` (nothing reads it).
 - Test: `routes/adminMerchantsRecompute.fix.test.ts` (test merchant stays test, live stays live, with an authorization; the first failed before) · ADR: none
+
+#### T3 Recompute statuses always reports 0 open authorizations
+- Where: `apps/api/src/admin/transactionStatusRecompute.ts`
+- What's wrong: the console's "Recompute statuses" result said every merchant had 0 open authorizations.
+- Why: the counter counted `authorized` rows inside a scan whose query excludes `status IN ('authorized', 'voided')`, so it could never count one. (It also drove the sandbox-flag clearing that T2 removed.)
+- What it breaks: staff can't see a merchant's outstanding authorizations from this tool; anything trusting the number (as T2's flag logic did) acts on a false 0.
+- Fix: count `status = 'authorized'` with its own query after the scan; the scan and its updates are unchanged.
+- Test: `admin/transactionStatusRecompute.fix.test.ts` (two open authorizations counted, failed before with 0; none → 0; authorized and voided rows still neither scanned nor rewritten) · ADR: none
 
 ### Scripts and other (X)
 
