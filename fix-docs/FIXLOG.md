@@ -84,7 +84,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html`, `apps/web/src/pages/checkout/CheckoutPage.tsx` | fixed | `fix(X10)` |
 | X11 | Merchant UI root URL renders React Router's unexpected application 404 | `apps/web/src/router.tsx` | fixed | `fix(X11)` |
 | X12 | Merchant analytics accepts impossible dates and can return a database error | `apps/api/src/routes/analytics.ts` | fixed | `fix(X12)` |
-| X13 | A request body that isn't valid JSON gets 500 `internal_error` instead of 400 (every route) | `apps/api/src/plugins/errorHandler.ts` | open | |
+| X13 | A request body that isn't valid JSON gets 500 `internal_error` instead of 400 (every route) | `apps/api/src/plugins/errorHandler.ts` | fixed | `fix(X13)` |
 | X14 | March sweep production postings need Finance reconciliation | `production ledger / scripts/reconcile_march.ts` | open | |
 
 ### Deploy and setup (D)
@@ -559,6 +559,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: each run cut merchant payables by the residue (70 fils across 13 lines) and moved the residue account the wrong way. Whether production has duplicate postings is unverified; see X14.
 - Fix: the sweep posts credit `card_scheme_clearing` / debit `scheme_rounding_residue` (same amounts, still one group per merchant). X2's test helper now reads the residue debit instead of the merchant debit. · Proper fix (if different): with finance, reverse the production postings already made (each run's merchant_payable debit and residue credit) and post the ADR-0002 legs once; not done here (never run scripts against data). Residue for April onward is M14.
 - Test: `scripts/reconcile_march.x5.fix.test.ts` (no merchant_payable leg; legs are clearing credit / residue debit of 9 fils; both failed before; rolled back) · ADR: 0002
+
+#### X13 Malformed JSON returns an internal server error
+- Where: `apps/api/src/plugins/errorHandler.ts`
+- What's wrong: malformed or empty JSON is reported as a 500 rather than a client error.
+- Why: Fastify's JSON parser errors have codes but no schema validation property, so they fell through to the generic error handler.
+- What it breaks: clients receive a misleading server error for invalid input and the server logs it as an unhandled failure.
+- Fix: map Fastify's invalid and empty JSON error codes to 400 `validation_error`; unrelated errors still return 500.
+- Test: `plugins/errorHandler.x13.fix.test.ts` (malformed JSON failed before with `500 !== 400`; empty and valid JSON and an unrelated server error are covered) · ADR: none
 
 #### X14 March sweep production postings need Finance reconciliation
 - Where: production `ledger_entries`; `scripts/reconcile_march.ts`

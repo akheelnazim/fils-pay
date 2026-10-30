@@ -21,7 +21,7 @@ export function errorHandler(
   const fastifyErr = err as FastifyError;
 
   // YA: 400 not 422 for schema validation errors — API.md section 2. correct
-  if (fastifyErr.validation) {
+  if (fastifyErr.validation || fastifyErr.code === "FST_ERR_CTP_INVALID_JSON_BODY" || fastifyErr.code === "FST_ERR_CTP_EMPTY_JSON_BODY") {
     reply.code(400).send({ error: "validation_error", message: fastifyErr.message });
     return;
   }
