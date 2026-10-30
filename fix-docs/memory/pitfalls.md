@@ -19,3 +19,8 @@ type: reference
   ("never modify tests") to subagents; tell reviewers those rules don't apply.
 - FIXLOG's tracker and entries share class headings; when editing entries, target the
   `## Entries` section.
+- Keep test output quiet: filter runs to the `# tests/pass/fail` summary and `not ok` lines
+  (e.g. `| grep -E "^# (tests|pass|fail)|^not ok"`); only show detail once something fails.
+  (User preference, 2026-10-30.)
+- Let the reviewer agent run the full test suites (typecheck, API, Go, `scripts/`) and report only
+  counts and failing lines; the main session runs just the new fix test. (User preference, 2026-10-30.)
