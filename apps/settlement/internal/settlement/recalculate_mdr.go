@@ -96,7 +96,20 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		if err != nil {
 			return RecalcResult{}, err
 		}
-		oldFee := b.feeFils
+		// F20: the fee compared is the one the batch kept: capture fees less the
+		// fee given back on the refunds it took. Re-rating only the kept part
+		// means a fully refunded batch has nothing to re-rate at any rate.
+		refundFeeNew, refundFeeOld, err := batchRefundFees(ctx, tx, b.id, mdrBps, discountBps)
+		if err != nil {
+			return RecalcResult{}, err
+		}
+		if newFee, err = money.SubtractFilsChecked(newFee, refundFeeNew); err != nil {
+			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: kept fee: %w", err)
+		}
+		oldFee, err := money.SubtractFilsChecked(b.feeFils, refundFeeOld)
+		if err != nil {
+			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: kept fee before: %w", err)
+		}
 		if b.status == "paid" {
 			// M8: a paid batch's fee_fils is never rewritten, so count what
 			// earlier passes already booked against it, or a re-run posts again.
@@ -122,13 +135,18 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		// cache all move by, so a later decrease gives back only what was taken.
 		if b.status != "paid" && diff > b.netPayoutFils {
 			diff = b.netPayoutFils
-			newFee, err = money.AddFilsChecked(b.feeFils, diff)
-			if err != nil {
-				return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: capped fee: %w", err)
-			}
 			if diff == 0 {
 				continue
 			}
+		}
+		if newFee, err = money.AddFilsChecked(oldFee, diff); err != nil {
+			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: applied fee: %w", err)
+		}
+		// fee_fils keeps holding the capture fee (what CloseBatch stored), moved
+		// by the change actually applied.
+		storedFee, err := money.AddFilsChecked(b.feeFils, diff)
+		if err != nil {
+			return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: stored fee: %w", err)
 		}
 		// F8: move the stored net by the fee difference rather than rebuilding
 		// it as gross - fee, which would drop the refunds CloseBatch deducted.
@@ -144,7 +162,7 @@ func RecalculateMDR(ctx context.Context, db *pgxpool.Pool, merchantID uuid.UUID,
 		if b.status != "paid" {
 			if _, err := tx.Exec(ctx, `
 				UPDATE settlement_batches SET fee_fils = $2, net_payout_fils = $3 WHERE id = $1
-			`, b.id, int64(newFee), int64(newNetPayout)); err != nil {
+			`, b.id, int64(storedFee), int64(newNetPayout)); err != nil {
 				return RecalcResult{}, fmt.Errorf("settlement: RecalculateMDR: update batch %s: %w", b.id, err)
 			}
 			// A fee increase (diff > 0) reduces net payout owed, so the cache
@@ -209,6 +227,39 @@ func recomputeBatchFee(ctx context.Context, tx pgx.Tx, batchID uuid.UUID, mdrBps
 		return 0, fmt.Errorf("settlement: RecalculateMDR: iterate batch events for %s: %w", batchID, err)
 	}
 	return fee, nil
+}
+
+// batchRefundFees returns, for the refunds a batch took (F8), the fee they
+// would give back at the given terms (each refund re-rated on its own, the
+// same per-event rule as a capture) and the fee they actually gave back.
+func batchRefundFees(ctx context.Context, tx pgx.Tx, batchID uuid.UUID, mdrBps, discountBps int64) (atNewTerms, given money.Fils, err error) {
+	rows, err := tx.Query(ctx, `
+		SELECT amount_fils, fee_reversed_fils FROM refunds WHERE settlement_batch_id = $1 ORDER BY id
+	`, batchID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("settlement: RecalculateMDR: select batch refunds for %s: %w", batchID, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var amount, reversed int64
+		if err := rows.Scan(&amount, &reversed); err != nil {
+			return 0, 0, fmt.Errorf("settlement: RecalculateMDR: scan batch refund for %s: %w", batchID, err)
+		}
+		fee, err := computeSettlementFeeChecked(money.Fils(amount), mdrBps, discountBps)
+		if err != nil {
+			return 0, 0, fmt.Errorf("settlement: RecalculateMDR: refund fee: %w", err)
+		}
+		if atNewTerms, err = money.AddFilsChecked(atNewTerms, fee); err != nil {
+			return 0, 0, fmt.Errorf("settlement: RecalculateMDR: sum refund fees: %w", err)
+		}
+		if given, err = money.AddFilsChecked(given, money.Fils(reversed)); err != nil {
+			return 0, 0, fmt.Errorf("settlement: RecalculateMDR: sum reversed fees: %w", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, fmt.Errorf("settlement: RecalculateMDR: iterate batch refunds for %s: %w", batchID, err)
+	}
+	return atNewTerms, given, nil
 }
 
 // paidBatchBookedAdjustment returns the fee change already booked on a paid

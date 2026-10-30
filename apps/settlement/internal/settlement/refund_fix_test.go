@@ -151,8 +151,11 @@ func TestF8_RecalculateMDRKeepsTheRefundDeduction(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT net_payout_fils FROM settlement_batches WHERE id = $1`, res.BatchID).Scan(&net); err != nil {
 		t.Fatalf("read net: %v", err)
 	}
-	if net != 5_800 { // fee 250 -> 300 moves the net by 50; the refund stays deducted (9 700 if it were dropped)
-		t.Errorf("net after recalculation = %d, want 5800", net)
+	// F20: only the 6 000 kept is re-rated: fee 300 - 120 on the refunded 4 000 = 180,
+	// against 250 - 100 = 150 before, so the net moves by 30 (F8 alone moved it by 50,
+	// charging the new rate on money already given back; 9 700 if the refund were dropped).
+	if net != 5_820 {
+		t.Errorf("net after recalculation = %d, want 5820", net)
 	}
 }
 
@@ -249,5 +252,42 @@ func TestF18_RateUpThenDownOnAFullyRefundedBatchPaysNothing(t *testing.T) {
 	}
 	if adjustments != 0 {
 		t.Errorf("merchant_payable adjustments net %d, want 0: the ledger must agree with the batch", adjustments)
+	}
+}
+
+// F20: the fee is recomputed on what the batch kept, so a rate change on a
+// fully refunded batch moves nothing, in either direction.
+func TestF20_RateCutOnAFullyRefundedBatchPaysNothing(t *testing.T) {
+	pool := mustPool(t)
+	ctx := context.Background()
+	merchantID := insertActiveMerchant(t, pool, 250)
+	day := time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC)
+	start, _ := BusinessDayWindow(day)
+	txnID, _ := insertCaptureEvent(t, pool, merchantID, 250, 10_000, start.Add(time.Hour))
+	insertRefund(t, merchantID, txnID, 10_000, 250, start.Add(2*time.Hour))
+	res, err := CloseBatch(ctx, pool, merchantID, day)
+	if err != nil || res.NetPayoutFils != 0 {
+		t.Fatalf("CloseBatch = %+v, %v; want net 0", res, err)
+	}
+
+	from, to := recalcWindow(day)
+	for _, bps := range []int64{200, 300, 100} {
+		if _, err := pool.Exec(ctx, `UPDATE merchants SET mdr_bps = $2 WHERE id = $1`, merchantID, bps); err != nil {
+			t.Fatalf("update mdr_bps: %v", err)
+		}
+		r, err := RecalculateMDR(ctx, pool, merchantID, from, to)
+		if err != nil {
+			t.Fatalf("RecalculateMDR at %d bps: %v", bps, err)
+		}
+		if len(r.Adjusted) != 0 {
+			t.Errorf("at %d bps adjusted %+v; a fully refunded batch has nothing to re-rate", bps, r.Adjusted)
+		}
+	}
+	var net int64
+	if err := pool.QueryRow(ctx, `SELECT net_payout_fils FROM settlement_batches WHERE id = $1`, res.BatchID).Scan(&net); err != nil {
+		t.Fatalf("read net: %v", err)
+	}
+	if net != 0 {
+		t.Errorf("net = %d, want 0", net)
 	}
 }
