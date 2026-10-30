@@ -80,7 +80,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 
 | ID | Bug | Where | Status | Commit |
 | --- | --- | --- | --- | --- |
-| D1 | Migration 0054 references missing table | open | |
+| D1 | Migration 0054 references missing table | `db/migrations/` | fixed | `fix(D1)` |
 | D2 | Migration 0055 uses non-existent columns | open | |
 | D3 | Dev webhook key fallback is 34 bytes, not 32 | `apps/api/src/config.ts` | fixed | `fix(D3)` |
 | D4 | API has no CORS; dashboard can't call it | open | |
@@ -524,6 +524,14 @@ Keep each entry short. One per bug, under its class heading:
 - Test: `reporting/consumer/applyEvent.fix.test.ts` (crashed before, warns and records the payout trend now); reporting suite 12/12 · ADR: none
 
 ### Deploy and setup (D)
+
+#### D1 Migration 0054 breaks a fresh database (and uses a reserved number)
+- Where: `db/migrations/`
+- What's wrong: `npm run migrate` on an empty database stopped at `0054_views.sql`; 0054–0056 also use numbers ADR-0005 reserves for settlement v2.
+- Why: 0054 created `v_unbatched_capture_events` on `settlement_batch_events`, a table no migration creates (existing databases only got past it by having that table from elsewhere).
+- What it breaks: every new environment (the new deployment server, a new developer, CI) cannot be built from migrations.
+- Fix: per the owner decision (ADR-0005 wins), deleted `0054_views.sql` and `0056_api_keys_revoke_after.sql` and added `0077_views_and_revoke_after.sql`, idempotent so old and fresh databases end the same: keeps `v_active_api_keys` and `api_keys.revoke_after`, drops `v_unbatched_capture_events` (never worked) and `merchant_payable_position` (the decision kept it because M9's button read it; since M9 nothing does, and it summed gross export lines, a wrong figure). Old filenames stay recorded in `schema_migrations`, which the runner ignores. 0055 is D2. · Proper fix (if different): same.
+- Test: `db/migrate.fix.test.ts` (a fresh migrate on a throwaway database no longer stops on `settlement_batch_events`, failed before; no 0054/0056 files; an already-migrated database has 0077's objects) · ADR: 0005, 0004 (no reader of the dropped view)
 
 #### D3 Dev webhook key fallback is 34 bytes
 - Where: `apps/api/src/config.ts`
