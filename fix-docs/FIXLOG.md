@@ -77,7 +77,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | X8 | Reporting parity check crashes when a batch closes for a day with captures but no rollup row | `apps/reporting/src/consumer/applyEvent.ts` | fixed | `fix(X8)` |
 | X9 | Reconciliation page crashes when the calculated gap is negative | `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx` | fixed | `fix(X9)` |
 | X10 | Merchant dashboard browser tab is titled "FilsPay Checkout" | `apps/web/index.html`, `apps/web/src/pages/checkout/CheckoutPage.tsx` | fixed | `fix(X10)` |
-| X11 | Merchant UI root URL renders React Router's unexpected application 404 | `apps/web/src/router.tsx` | open | |
+| X11 | Merchant UI root URL renders React Router's unexpected application 404 | `apps/web/src/router.tsx` | fixed | `fix(X11)` |
 
 ### Deploy and setup (D)
 
@@ -542,8 +542,8 @@ Keep each entry short. One per bug, under its class heading:
 - What's wrong: the router defines checkout and `/dashboard/*` paths but no `/` route or catch-all route.
 - Why: the root path falls through React Router's default unmatched-route error screen.
 - What it breaks: opening the merchant UI at its base URL displays a developer error instead of taking the user to login or the dashboard.
-- Fix: add a root redirect to `/dashboard` (which already routes to transactions and enforces authentication), plus a deliberate not-found route for other unknown paths.
-- Test: pending · ADR: none
+- Fix: add a root redirect to `/dashboard` (which already routes to transactions and enforces authentication).
+- Test: `apps/web/src/router.x11.fix.test.ts` (failed before because root had no redirect; passes now) · ADR: none · Commit: `fix(X11)`
 
 #### X9 Reconciliation page crashes when gapFils is negative
 - Where: `apps/web/src/format.ts`, `apps/web/src/pages/settlement/ReconciliationPage.tsx`
