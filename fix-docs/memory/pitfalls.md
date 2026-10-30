@@ -24,3 +24,5 @@ type: reference
   (User preference, 2026-10-30.)
 - Let the reviewer agent run the full test suites (typecheck, API, Go, `scripts/`) and report only
   counts and failing lines; the main session runs just the new fix test. (User preference, 2026-10-30.)
+- Review models: the per-fix reviewer agent is Sonnet (the default). Opus is used once, for an overall
+  review after all fixes are done, not per fix. (User preference, 2026-10-30.)
