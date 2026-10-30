@@ -266,8 +266,8 @@ func TestRebuildBalances_ValidToken(t *testing.T) {
 		t.Fatalf("seed settlement batch: %v", err)
 	}
 	_, err = pool.Exec(context.Background(), `
-		INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, line_sequence)
-		SELECT $1, id, 12000, 1 FROM transactions WHERE merchant_id = $2 LIMIT 1
+		INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, exported_amount_fils, line_sequence)
+		SELECT $1, id, 12000, 12000, 1 FROM transactions WHERE merchant_id = $2 LIMIT 1
 	`, batchID, merchantID)
 	if err != nil {
 		t.Fatalf("seed scheme export line: %v", err)

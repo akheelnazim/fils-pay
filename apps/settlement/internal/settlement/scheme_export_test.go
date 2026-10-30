@@ -11,10 +11,10 @@ import (
 
 var twoDecimalPlaces = regexp.MustCompile(`^\d+\.\d{2}$`)
 
-// TestSchemeExportAmountHasTwoDecimals pins the acquirer-format promise
-// scheme_export_lines.amount carries: every line handed to the clearing
-// file is quoted in BD at exactly the two decimal places the scheme
-// accepts — no third digit, no bare integer, no trailing-zero loss.
+// TestSchemeExportAmountHasTwoDecimals pins the acquirer-format promise:
+// every line handed to the clearing file is quoted in BD at exactly the two
+// decimal places the scheme accepts — no third digit, no bare integer, no
+// trailing-zero loss.
 // am: 4747 -> "4.75" passes the regex. is 4.75 right for 4747 fils?? it rounds. whatever, scheme wants 2dp
 func TestSchemeExportAmountHasTwoDecimals(t *testing.T) {
 	pool := mustPool(t)

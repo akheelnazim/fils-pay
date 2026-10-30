@@ -526,14 +526,15 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
                 [txn.id, txn.capturedFils, txn.occurredAt, dayBatchId],
               );
 
+              const schemeAmountFils = toFils(Math.floor(txn.capturedFils / 10) * 10);
               await client.query(
-                `INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, amount, line_sequence)
+                `INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, exported_amount_fils, line_sequence)
                  VALUES ($1, $2, $3, $4, $5)`,
                 [
                   dayBatchId,
                   txn.id,
-                  toFils(Math.floor(txn.capturedFils / 10) * 10),
-                  (Math.floor(txn.capturedFils / 10) * 10) / 1000,
+                  schemeAmountFils,
+                  schemeAmountFils,
                   dayLineSequence++,
                 ],
               );
@@ -610,9 +611,9 @@ export async function generate(pool: Pool): Promise<SeedSummary> {
 
         for (const line of schemeLineParams) {
           await client.query(
-            `INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, amount, line_sequence)
+            `INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, exported_amount_fils, line_sequence)
              VALUES ($1, $2, $3, $4, $5)`,
-            [closedBatchId, line.transactionId, line.amountFils, line.amountFils / 1000, line.lineSequence],
+            [closedBatchId, line.transactionId, line.amountFils, line.amountFils, line.lineSequence],
           );
           schemeExportLineCount += 1;
         }

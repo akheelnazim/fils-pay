@@ -23,9 +23,9 @@ func insertClosedBatchWithLine(t *testing.T, pool *pgxpool.Pool, merchantID uuid
 	}
 
 	_, err = pool.Exec(ctx, `
-		INSERT INTO scheme_export_lines (settlement_batch_id, amount_fils, line_sequence)
-		VALUES ($1, $2, $3)
-	`, batchID, amountFils, lineSequence)
+		INSERT INTO scheme_export_lines (settlement_batch_id, amount_fils, exported_amount_fils, line_sequence)
+		VALUES ($1, $2, $3, $4)
+	`, batchID, amountFils, amountFils, lineSequence)
 	if err != nil {
 		t.Fatalf("insertClosedBatchWithLine: insert export line: %v", err)
 	}

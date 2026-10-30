@@ -36,7 +36,7 @@ func TestM2_SchemeExportAmountMatchesTruncatedFils(t *testing.T) {
 	}
 
 	rows, err := pool.Query(context.Background(), `
-		SELECT t.amount_fils, sel.amount_fils, sel.amount::text
+		SELECT t.amount_fils, sel.amount_fils
 		  FROM scheme_export_lines sel
 		  JOIN transactions t ON t.id = sel.transaction_id
 		 WHERE sel.settlement_batch_id = $1
@@ -48,12 +48,12 @@ func TestM2_SchemeExportAmountMatchesTruncatedFils(t *testing.T) {
 	seen := 0
 	for rows.Next() {
 		var gross, lineFils int64
-		var amount string
-		if err := rows.Scan(&gross, &lineFils, &amount); err != nil {
+		if err := rows.Scan(&gross, &lineFils); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
 		seen++
 		want := cases[money.Fils(gross)]
+		amount := formatFilsAsTwoDecimalString(money.Fils(lineFils))
 		if amount != want {
 			t.Errorf("gross %d fils: scheme amount = %s, want %s (amount_fils %d)", gross, amount, want, lineFils)
 		}

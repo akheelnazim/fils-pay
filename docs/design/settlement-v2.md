@@ -137,5 +137,7 @@ See docs/runbooks/shadow-ledger-cutover.md. Exit criteria:
    v1 first; FP-212 can't wait.)
 2. How do we backfill v2 from v1 history? Replaying `ledger_entries` would
    bring the v1 rounding with it.
-3. Do we keep `scheme_export_lines.amount` (0050)? It's only used for the
-   file and finance trusts it.
+3. `scheme_export_lines.amount` (0050) duplicated a value in decimal form.
+   Migration 0080 replaces it with `exported_amount_fils`, an integer-fils
+   snapshot that preserves historical scheme re-exports; the exporter formats
+   it only at the file boundary.

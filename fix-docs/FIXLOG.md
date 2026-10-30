@@ -55,6 +55,7 @@ Grouped by bug class (prefix = audit section; new finds go at the end of their c
 | M13 | Reconciliation pending fee uses float rates (`fees/estimate.ts`) | `apps/api/src/fees/estimate.ts` | fixed | `fix(M13)` |
 | M14 | Scheme residue never journaled (ADR-0002) | `apps/settlement/internal/settlement/batch.go` | fixed | `fix(M14)` |
 | M15 | Balance rebuild can overwrite a concurrent batch-close cache update (YA's TODO in rebuild.go) | `apps/settlement/internal/ledger/rebuild.go` | fixed | `fix(M15)` |
+| M16 | Scheme export stores a duplicate decimal amount instead of integer fils | `db/migrations/0050_scheme_export_lines_acquirer_amount.sql`, `apps/settlement/internal/settlement/` | fixed | `fix(M16)` |
 
 ### Settlement timing and test merchants (T)
 
@@ -446,6 +447,14 @@ Keep each entry short. One per bug, under its class heading:
 - What it breaks: a merchant with 5.000 BD settled and a 1.000 BD batch closing during the rebuild ends at 5.000 instead of 6.000 until the next rebuild; payouts read the cache.
 - Fix: per merchant, make sure the cache row exists, lock it `FOR UPDATE`, then read the ledger: a batch close holding the row commits first and the ledger read then includes it. · Proper fix (if different): lock merchants in a fixed order (or one at a time in separate transactions) so a long rebuild can't deadlock with a multi-merchant split payout; today a deadlock just fails the manual CLI run.
 - Test: `ledger/rebuild_fix_test.go` (a batch close holding the row while the rebuild runs; 5000 instead of 6000 before, 6000 now) · ADR: 0004 unchanged (the console button is M9's settled-data path)
+
+#### M16 Scheme export stores a decimal amount instead of integer fils
+- Where: `db/migrations/0050_scheme_export_lines_acquirer_amount.sql`, `apps/settlement/internal/settlement/`
+- What's wrong: `scheme_export_lines.amount` stores a BD decimal alongside `amount_fils`, contrary to ADR-0001.
+- Why: migration 0050 added a persisted decimal copy of each scheme-format amount.
+- What it breaks: the database contains a decimal money value, contrary to the integer-fils storage rule.
+- Fix: migration 0080 backfills `exported_amount_fils` from the old decimal snapshot (or from `amount_fils` when NULL), then drops `amount`. New close batches and seed data store both integer-fils values; the exporter formats the saved export fils at the file boundary, preserving historical re-exports. · Proper fix (if different): none.
+- Test: `settlement/scheme_export_m16_fix_test.go` (schema has no decimal amount; exact file formatting and a historic rounded export snapshot preserved; failed before) · ADR: 0001, 0002 · Commit: `fix(M16)`
 
 ### Settlement timing and test merchants (T)
 

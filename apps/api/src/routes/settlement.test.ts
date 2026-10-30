@@ -241,9 +241,9 @@ async function closeAndPayoutBatch(merchantId: string, businessDate: string): Pr
     const gross = grossByTxn.get(txnId)!;
     const truncated = Math.floor(gross / 10) * 10; // TruncateToSchemeAmount, integer-only
     await pool.query(
-      `INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, line_sequence)
-       VALUES ($1, $2, $3, $4)`,
-      [batchId, txnId, truncated, i + 1],
+      `INSERT INTO scheme_export_lines (settlement_batch_id, transaction_id, amount_fils, exported_amount_fils, line_sequence)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [batchId, txnId, truncated, truncated, i + 1],
     );
   }
 

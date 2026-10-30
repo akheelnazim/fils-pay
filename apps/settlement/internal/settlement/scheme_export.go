@@ -24,7 +24,6 @@ func TruncateToSchemeAmount(grossFils money.Fils) money.Fils {
 	return (grossFils / 10) * 10
 }
 
-
 // buildBatchClosedPayload builds the settlement.batch_closed outbox
 // payload, following the same shape convention the webhook dispatcher
 // depends on for every other event type (a top-level merchantId field,
@@ -54,7 +53,7 @@ func buildBatchClosedPayload(
 type SchemeExportLine struct {
 	LineSequence      int32
 	AcquirerReference string
-	Amount            string // BD, exactly two decimal places, as stored
+	Amount            string // BD, exactly two decimal places, formatted from the saved export fils
 }
 
 // LoadSchemeExportLines reads the already-written scheme_export_lines
@@ -62,8 +61,7 @@ type SchemeExportLine struct {
 // are the durable record — this is a pure read.
 func LoadSchemeExportLines(ctx context.Context, db *pgxpool.Pool, batchID uuid.UUID) ([]SchemeExportLine, error) {
 	rows, err := db.Query(ctx, `
-		SELECT sel.line_sequence, t.acquirer_reference,
-		       COALESCE(sel.amount, ROUND(sel.amount_fils::numeric / 1000, 2))::text
+		SELECT sel.line_sequence, t.acquirer_reference, sel.exported_amount_fils
 		  FROM scheme_export_lines sel
 		  JOIN transactions t ON t.id = sel.transaction_id
 		 WHERE sel.settlement_batch_id = $1
@@ -77,9 +75,11 @@ func LoadSchemeExportLines(ctx context.Context, db *pgxpool.Pool, batchID uuid.U
 	var lines []SchemeExportLine
 	for rows.Next() {
 		var line SchemeExportLine
-		if err := rows.Scan(&line.LineSequence, &line.AcquirerReference, &line.Amount); err != nil {
+		var amountFils int64
+		if err := rows.Scan(&line.LineSequence, &line.AcquirerReference, &amountFils); err != nil {
 			return nil, fmt.Errorf("settlement: LoadSchemeExportLines: scan: %w", err)
 		}
+		line.Amount = formatFilsAsTwoDecimalString(money.Fils(amountFils))
 		lines = append(lines, line)
 	}
 	if err := rows.Err(); err != nil {
